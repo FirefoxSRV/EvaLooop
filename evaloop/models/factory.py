@@ -4,9 +4,6 @@ import logging
 from typing import Dict, Any
 
 from .base import BaseLLM
-from .open_source import HuggingFaceLLM
-from .open_source_vllm import VllmLLM
-from .closed_source import OpenAILLM
 
 
 class ModelFactory:
@@ -42,12 +39,22 @@ class ModelFactory:
         
         self.logger.debug(f"Creating model with config: {sanitized_config}")
         
+        # Backends are imported on use, not on import of this module: an
+        # API-only run must not need torch/transformers installed, and a local
+        # run must not need the Gemini SDK. This matches the lazy-import
+        # convention the package already applies to its CLI.
         if model_type in ["llama", "deepseek", "huggingface", "open_source"]:
+            from .open_source import HuggingFaceLLM
             return HuggingFaceLLM(model_config)
         elif model_type in ["vllm"]:
+            from .open_source_vllm import VllmLLM
             return VllmLLM(model_config)
         elif model_type in ["openai", "chatgpt", "closed_source"]:
+            from .closed_source import OpenAILLM
             return OpenAILLM(model_config)
+        elif model_type in ["gemini", "google"]:
+            from .gemini import GeminiLLM
+            return GeminiLLM(model_config)
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
     
@@ -66,5 +73,7 @@ class ModelFactory:
             "vllm",
             "openai",
             "chatgpt",
-            "closed_source"
+            "closed_source",
+            "gemini",
+            "google",
         ]

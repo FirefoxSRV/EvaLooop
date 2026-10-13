@@ -36,6 +36,9 @@ class BaseTask(ABC):
         Context keys provided by the loop runner:
           - "cycle_input": the text the first task of the current cycle
             received (e.g. the docstring-style prompt at cycle start)
+          - "task_input": the text *this* task received, i.e. the previous
+            task's output within the same cycle (for a summarization step,
+            the code being summarized)
           - "task_id": dataset task id
           - "cycle_number": current cycle number
         """

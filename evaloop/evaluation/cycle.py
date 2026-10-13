@@ -110,6 +110,12 @@ class BatchEvaluationCycle:
 
                             context = {
                                 "cycle_input": cycle_result["_cycle_input"],
+                                # This task's own input, i.e. the previous task's
+                                # output. Needed by postprocess hooks that derive
+                                # from what the model just produced (see
+                                # evaloop.anchors). Still unmodified here: it is
+                                # replaced with this task's output further down.
+                                "task_input": cycle_result["_current_input"],
                                 "task_id": cycle_result["task_id"],
                                 "cycle_number": cycle_number,
                             }
@@ -201,7 +207,12 @@ class BatchEvaluationCycle:
                 # Get the output from the model
                 raw_output = self.model.generate(prompt)
 
-                output = task.postprocess(task.extract_output(raw_output), context)
+                # "task_input" is per-task (see the batch path above), so it is
+                # refreshed here rather than in the cycle-level context.
+                output = task.postprocess(
+                    task.extract_output(raw_output),
+                    {**context, "task_input": current_input},
+                )
 
                 cycle_results[f"task_{i+1}_output"] = output
                 cycle_results[f"task_{i+1}_raw_output"] = raw_output

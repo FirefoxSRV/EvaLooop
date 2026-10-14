@@ -57,15 +57,54 @@ and any difference in ASL is attributable to the anchor alone.
 * **H4 (discriminative power).** Removing the oracle widens the spread of
   robustness scores across models: sd(ASL_bias) under A2 > under A0.
 
+* **H5 (echo-rate mediation).** Added 2026-10-14 with the model-set amendment,
+  before any results existed. If the leaked oracle is what sustains loops, then
+  the *mechanism* should be visible per model: a model that copies the assertion
+  into its answer more often is relying on it more, and should lose more when it
+  is removed. Prediction: across models, the assert-echo rate measured on the A0
+  arm is positively associated with the size of that model's A0 -> A2 drop in
+  ASL. With only two or three models this is a descriptive check, not a test -
+  it will be reported as a direction with the per-model numbers, never as a
+  correlation coefficient over n=2.
+
 An outcome where A1 and A2 barely move is a real answer to the RQ, not a failed
 experiment, and will be reported as such.
 
 ## Models
 
-Three models, all of which have published single-run baselines in the data
-package: `gemini-2.0-flash-lite`, `gemini-2.5-flash-lite`, `gemini-2.5-flash`.
-Greedy decoding (temperature 0, top_p 1), max 1024 output tokens, thinking
-disabled on the 2.5 series, max 10 cycles, one run per configuration.
+**Amended 2026-10-14, before any run produced results** (no file existed in
+`results/` at the time of this edit; the original text is kept below).
+
+The model set had to change for a reason outside the experiment: every Gemini
+2.5 model - the only candidates with published baselines in the data package -
+now returns `404 ... no longer available to new users` for a newly issued API
+key. Of the models that are reachable and whose thinking can be pinned, two were
+confirmed to answer reliably and are the evaluated set:
+
+* `gemma-4-26b-a4b-it`
+* `gemini-3.5-flash-lite`
+
+`gemma-4-31b-it` and `gemini-3.1-flash-lite` were probed and did not return
+within 120 s per call; they are excluded rather than run with a different
+timeout regime from the others. A third model will be added only if it clears
+the same reliability bar, and its addition will be noted here.
+
+Consequence for the baseline: **no evaluated model has a published baseline, so
+the A0 (`assert`) arm run here is the baseline.** This is what the assignment
+requires for Option B regardless ("the same models on the same tasks under the
+standard loop"), and it removes a threat the published records carry - the data
+package documents a different summarization prompt from the one its data shows,
+so a published baseline would not have been strictly comparable. The package is
+still used for motivation, harness validation, subset-fidelity, and as the
+reference for what normal failures look like.
+
+*Original text:* "Three models, all of which have published single-run baselines
+in the data package: `gemini-2.0-flash-lite`, `gemini-2.5-flash-lite`,
+`gemini-2.5-flash`."
+
+Settings: greedy decoding (temperature 0, top_p 1), max 1024 output tokens,
+`seed=20251013`, thinking pinned to `minimal`, max 10 cycles, one run per
+configuration.
 
 ## Tasks
 

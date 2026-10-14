@@ -11,10 +11,12 @@ things make that inspection worth trusting:
   Without that, knowing a failure came from the ablated arm would make it easy to
   code it as oracle dependence - exactly the finding the experiment is testing.
 
-Writes three files:
+Writes two files:
   <out>/failures_to_code.csv   shuffled, unlabelled, one row per failure
   <out>/failures_key.json      row id -> model, arm, task id, cycle
-  <out>/failures_context.md    the full loop history of each sampled failure
+
+The coder's reading copy is built separately by scripts/make_coding_worksheet.py,
+which adds the mechanical facts that are tedious to check by eye.
 
 The codebook is in PREREGISTRATION.md and is reproduced in the CSV header
 comment, so the coder does not have to hold eight codes in their head.
@@ -166,41 +168,11 @@ def main() -> int:
                  for i, f in enumerate(chosen, start=1)},
     }, indent=2) + "\n")
 
-    # Context for the coder: everything needed to judge, nothing that reveals the arm.
-    context_path = out_dir / "failures_context.md"
-    lines = ["# Failures to code", "",
-             "Each entry is one loop that failed. The arm is deliberately not shown.",
-             "Record a primary code per row in `failures_to_code.csv`.", "",
-             "## Codebook", ""]
-    lines += [f"- **{code}** - {text}" for code, text in CODEBOOK.items()]
-    lines += ["", "---", ""]
-    for index, failure in enumerate(chosen, start=1):
-        lines += [
-            f"## Row {index}", "",
-            f"- failed at cycle **{failure['failed_at_cycle']}** "
-            f"(sustained {failure['sustained']})",
-            f"- base tests passed: `{failure['base_passed']}`, "
-            f"plus tests passed: `{failure['plus_passed']}`",
-        ]
-        if failure["error"]:
-            lines.append(f"- harness error: `{failure['error'][:200]}`")
-        lines += [
-            "", "### Original task", "", "```python", failure["initial_prompt"].strip(), "```",
-            "", "### Prompt fed to the failing cycle (the model's own summary)", "",
-            "```python", failure["last_summary"].strip() or "(none)", "```",
-            "", "### Code that passed the cycle before", "",
-            "```python", failure["last_passing_code"].strip() or "(none)", "```",
-            "", "### Code that failed", "",
-            "```python", failure["failing_code"].strip() or "(none)", "```",
-            "", "---", "",
-        ]
-    context_path.write_text("\n".join(lines) + "\n")
-
     print(f"\nSampled {len(chosen)} failures "
           f"({args.per_arm} per arm x {len(by_arm)} arm(s)), shuffled, seed {args.seed}")
     print(f"  code here   : {csv_path}")
-    print(f"  context     : {context_path}")
     print(f"  arm labels  : {key_path}  (open only after coding)")
+    print(f"  next        : python scripts/make_coding_worksheet.py")
     return 0
 
 

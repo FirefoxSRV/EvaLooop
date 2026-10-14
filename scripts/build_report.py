@@ -20,17 +20,17 @@ from pathlib import Path
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 CSS = """
-@page { size: letter; margin: 0.62in 0.70in; }
+@page { size: letter; margin: 0.55in 0.62in; }
 html { -webkit-print-color-adjust: exact; }
 body {
   font-family: "Charter", "Georgia", "Times New Roman", serif;
-  font-size: 9.6pt; line-height: 1.34; color: #111; margin: 0;
+  font-size: 9.2pt; line-height: 1.28; color: #111; margin: 0;
   text-align: justify; hyphens: auto; -webkit-hyphens: auto;
 }
 h1 { font-size: 14.5pt; line-height: 1.2; margin: 0 0 2pt; text-align: left; }
-h2 { font-size: 10.6pt; margin: 9pt 0 3pt; text-align: left;
+h2 { font-size: 10.2pt; margin: 7pt 0 2.5pt; text-align: left;
      border-bottom: 0.5pt solid #bbb; padding-bottom: 1pt; }
-p { margin: 0 0 4.5pt; }
+p { margin: 0 0 4pt; }
 blockquote {
   margin: 5pt 0; padding: 3pt 7pt; border-left: 2pt solid #666;
   background: #f5f5f5; font-style: italic; text-align: left;
@@ -38,9 +38,9 @@ blockquote {
 blockquote p { margin: 0; }
 table {
   border-collapse: collapse; width: 100%; margin: 5pt 0 6pt;
-  font-size: 8.3pt; page-break-inside: avoid;
+  font-size: 7.9pt; page-break-inside: avoid;
 }
-th, td { border: 0.4pt solid #999; padding: 1.8pt 3.5pt; text-align: left; }
+th, td { border: 0.4pt solid #999; padding: 1.4pt 3pt; text-align: left; }
 th { background: #eee; font-weight: bold; }
 code, tt {
   font-family: "SF Mono", "Menlo", monospace; font-size: 8.1pt;

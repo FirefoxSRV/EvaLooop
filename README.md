@@ -94,19 +94,33 @@ verdicts directly.
 
 ## 3. What was modified upstream, and why
 
-The extension is mostly new files. Four existing files were touched, all
-additively:
+The extension is almost entirely new files. **Five existing source files were
+touched, adding 43 lines and removing 7** - every change additive or a
+lazy-import move, none altering existing behaviour:
 
-| File | Change | Why |
-|---|---|---|
-| `evaloop/evaluation/cycle.py` | expose `task_input` in the `postprocess` context, in both the batch and sequential paths | The signature anchor must derive from the code the model just produced; upstream's context carried only the cycle-start input. Existing tasks ignore the new key. |
-| `evaloop/tasks/base.py` | document the new context key | It is part of the hook contract. |
-| `evaloop/tasks/__init__.py` | register the two new task types | Follows the existing registry convention. |
-| `evaloop/models/factory.py` | import backends on use; register `gemini`/`google` | An API-only run should not need torch installed, and a local run should not need the Gemini SDK. Extends the lazy-import convention the repo already asserts for its CLI. |
-| `evaloop/core/evaluator.py` | import `py_testing` (and so evalplus) inside the two methods that use it | The generation stage talks to an API and never executes model output; it should not need the execution machinery at all. Same convention. |
+| File | Change | +/− | Why |
+|---|---|---|---|
+| `evaloop/evaluation/cycle.py` | expose `task_input` in the `postprocess` context, in both the batch and sequential paths | +12 −1 | The signature anchor must derive from the code the model just produced; upstream's context carried only the cycle-start input. Existing tasks ignore the new key. |
+| `evaloop/models/factory.py` | import backends on use; register `gemini`/`google` | +13 −4 | An API-only run should not need torch installed, and a local run should not need the Gemini SDK. Extends the lazy-import convention the repo already asserts for its CLI. |
+| `evaloop/core/evaluator.py` | import `py_testing` (and so evalplus) inside the two methods that use it | +11 −2 | The generation stage talks to an API and never executes model output; it should not need the execution machinery at all. Same convention. |
+| `evaloop/tasks/__init__.py` | register the two new task types | +4 −0 | Follows the existing registry convention. |
+| `evaloop/tasks/base.py` | document the new context key | +3 −0 | It is part of the hook contract. |
+
+Two non-source files also change: `.gitignore` gains the run artifacts
+(`cache/`, `results/`, `.evalplus-cache/`), and `README.md` is this file, with
+upstream's preserved verbatim as `README.upstream.md`.
 
 Everything else is new: `evaloop/anchors/`, two task types, a Gemini backend, the
-call cache, the sandboxed tester, the anchored evaluator, and the scripts.
+call cache, the sandboxed tester, the anchored evaluator, the scripts, and the
+tests. The upstream test suite still passes unchanged alongside them (209 tests
+total).
+
+A one-line check of that claim:
+
+```bash
+git diff --stat upstream/dev...HEAD                      # totals
+git diff upstream/dev...HEAD -- evaloop/                 # every source change
+```
 
 **Things deliberately *not* reimplemented.** `evaloop/analysis/metrics.py`
 already implements `asl_pow`, `asl_bias`, `asl_semantic` and `pass_drop` exactly

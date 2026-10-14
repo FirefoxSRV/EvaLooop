@@ -12,7 +12,7 @@ Usage:
 """
 
 import argparse
-import shutil
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -58,6 +58,8 @@ def main() -> int:
     parser.add_argument("--md", default="report.md")
     parser.add_argument("--pdf", default="report.pdf")
     parser.add_argument("--html", action="store_true", help="Write the HTML and stop")
+    parser.add_argument("--max-pages", type=int, default=3,
+                        help="Fail if the PDF exceeds this many pages")
     args = parser.parse_args()
 
     try:
@@ -97,14 +99,23 @@ def main() -> int:
     size = pdf_path.stat().st_size
     print(f"Wrote {pdf_path} ({size // 1024} KB)")
 
-    # Page count, so the three-page cap is checked rather than assumed.
-    if shutil.which("mdls"):
-        out = subprocess.run(["mdls", "-name", "kMDItemNumberOfPages", str(pdf_path)],
-                             capture_output=True, text=True).stdout.strip()
-        pages = out.split("=")[-1].strip()
-        print(f"Pages: {pages}" + ("  <-- OVER THE 3-PAGE LIMIT" if pages.isdigit()
-                                   and int(pages) > 3 else ""))
-    return 0
+    # Page count, so the three-page cap is checked rather than assumed. Read it
+    # out of the PDF's page tree: Spotlight's kMDItemNumberOfPages is served
+    # from a stale index right after a write and reported 3 for a 4-page file.
+    pages = page_count(pdf_path)
+    over = pages is not None and pages > args.max_pages
+    print(f"Pages: {pages}" + (f"  <-- OVER THE {args.max_pages}-PAGE LIMIT" if over else ""))
+    return 1 if over else 0
+
+
+def page_count(pdf_path: Path):
+    """Pages from the PDF page tree, or None if it cannot be determined."""
+    raw = pdf_path.read_bytes()
+    counts = [int(m.group(1)) for m in re.finditer(rb"/Count\s+(\d+)", raw)]
+    if counts:
+        return max(counts)
+    pages = len(re.findall(rb"/Type\s*/Page[^s]", raw))
+    return pages or None
 
 
 if __name__ == "__main__":

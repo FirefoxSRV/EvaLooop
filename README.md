@@ -1,451 +1,259 @@
-# EvaLooop: LLM Robustness Evaluation Framework
-
-[![arXiv](https://img.shields.io/badge/arXiv-2505.12185-b31b1b.svg)](https://arxiv.org/abs/2505.12185)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Leaderboard](https://img.shields.io/badge/leaderboard-evalooop.github.io-blue)](https://evalooop.github.io/)
-
-EvaLoop is a framework for evaluating the robustness of Large Language Models (LLMs) through iterative dual-task cycles. The framework measures how many cycles an LLM can execute before generating code that fails functional testing, providing a quantitative metric for model robustness. It accompanies the paper [*EvaLoop: Assessing LLM Robustness in Programming from a Self-consistency Perspective*](https://arxiv.org/abs/2505.12185); results across models are published on the [leaderboard](https://evalooop.github.io/).
-
-## 🚀 Quick Start
-
-### Installation
-
-EvaLoop is not yet published on PyPI — install from source:
-
-```bash
-git clone https://github.com/evalooop/EvaLooop
-cd EvaLooop
-pip install -e .
-```
-
-Optional extras:
-
-```bash
-pip install -e ".[vllm]"   # GPU batch inference via vLLM (Linux + CUDA only)
-pip install -e ".[dev]"    # development tools (pytest, ruff, ...)
-```
-
-After installing, check your environment:
-
-```bash
-evaloop validate_setup                    # full check
-evaloop validate_setup --check_gpu=False  # skip GPU checks (e.g. on a laptop)
-```
-
-### Basic Usage
-
-```bash
-# Evaluate an OpenAI model on the generation<->summarization loop
-evaloop evaluate --model "gpt-4"
-
-# Evaluate an open-source model with multi-GPU vLLM
-evaloop evaluate --model "Qwen/Qwen2.5-Coder-32B-Instruct" \
-                 --gpu_ids "0,1,2,3" \
-                 --tensor_parallel_size 4 \
-                 --max_cycles 15
-
-# Analyze results (the default ASL metric calls an LLM judge; see "Scoring")
-evaloop analyze --results_path "results/experiment_results.json" \
-                --judge_api_key_file api.key
-```
-
-## 🔄 How the Loop Works
-
-Each evaluation cycle alternates between two tasks:
-
-1. **Initial input**: a natural-language prompt describing a coding task (from MBPP+), formatted as a docstring whose final line is an `assert` statement.
-2. **Code generation**: the model generates code from the prompt.
-3. **Functional testing**: the generated code is executed against the dataset's test cases ([EvalPlus](https://github.com/evalplus/evalplus) MBPP+).
-4. **Code summarization**: the model summarizes the generated code back into a natural-language description.
-5. **Iteration**: the summary becomes the next cycle's prompt; the loop repeats until the generated code fails testing or `--max_cycles` is reached.
-
-The number of loops each task survives is aggregated into the **ASL (Average Sustainable Loops)** score, which weights long survival quadratically and discounts semantic drift at the failure boundary; see [Scoring](#-scoring).
-
-### Design note: the retained assert line
-
-The summarization step deliberately re-attaches the final `assert` line from the prompt the cycle *started* with, so each new prompt looks like:
-
-```
-"""
-<model-generated summary>
-assert similar_elements((3, 4, 5, 6),(5, 7, 4, 10)) == (4, 5)
-"""
-```
-
-This is intentional, not an artifact: keeping one assert anchors the function name and signature across cycles, so the loop measures **semantic drift** in the model's understanding rather than trivial failures from a renamed function. You will see this line in every generated prompt in the result data. The implementation lives in `CodeSummarizationTask.postprocess` (`evaloop/tasks/code_summarization.py`).
-
-### Supported Task Types
-
-| Task type | Config name | Status |
-|---|---|---|
-| Code generation | `code_generation` | ✅ Supported |
-| Code summarization | `code_summarization` | ✅ Supported |
-| Code translation | `code_translation` | 🧪 Experimental — the task class exists, but config/evaluator support is not yet in the public release (`run_code_translation()` raises `NotImplementedError`) |
-
-Want to add your own loop? A new task type is one new file plus a registry entry — no changes to the loop runner. See the [Contributing Guide](CONTRIBUTING.md).
-
-## 🛠️ CLI Reference
-
-### `evaluate` — Code Generation ↔ Summarization
-
-```bash
-evaloop evaluate --model MODEL [OPTIONS]
-```
-
-**Key options:**
-- `--model`: A single model name or HuggingFace path (required). Examples: `"gpt-4"`, `"Qwen/Qwen2.5-Coder-32B-Instruct"`
-- `--dataset`: Dataset to use. Currently only `mbpp_plus` is supported (HumanEval is planned).
-- `--max_cycles`: Maximum evaluation cycles (default: 10)
-- `--temperature`: Generation temperature (default: 0.0)
-- `--output_dir`: Results output directory (default: `results/`)
-- `--gpu_ids`: GPU IDs for vLLM models (e.g., `"0,1,2,3"`)
-- `--tensor_parallel_size`: GPUs for tensor parallelism (default: 1)
-
-**Examples:**
-
-```bash
-# Basic OpenAI evaluation
-evaloop evaluate --model "gpt-4"
-
-# Large model with multi-GPU setup
-evaloop evaluate --model "meta-llama/Llama-3-70b-instruct-hf" \
-                 --gpu_ids "0,1,2,3" \
-                 --tensor_parallel_size 4 \
-                 --gpu_memory_utilization 0.85
-
-# Custom experiment parameters
-evaloop evaluate --model "deepseek-coder-33b" \
-                 --max_cycles 20 \
-                 --temperature 0.2 \
-                 --experiment_name "deepseek_robust_eval"
-```
-
-To evaluate several models, run `evaloop evaluate` once per model (see [Batch Processing](#batch-processing)).
-
-### `analyze` — Result Analysis
-
-```bash
-evaloop analyze --results_path "results/experiment_results.json" [OPTIONS]
-```
-
-**Key options:**
-- `--results_path`: Path to results JSON file (required)
-- `--metrics`: Metrics to compute (default: `"ASL,ASL_pow,ASL_bias,pass@1,pass_drop"`, see [Scoring](#-scoring))
-- `--generate_plots`: Generate visualization plots (default: True)
-- `--output_dir`: Analysis output directory (default: `<results dir>/analysis`)
-- `--max_cycles`: Loop budget M of the run (default: value recorded in the results file; for older
-  files, the value implied by tasks flagged `max_cycles_reached`; else 10 with a warning)
-
-**Similarity judge options** (only used by the `ASL` metric, and only for pairs not cached yet):
-- `--judge_model`: Judge model id (default: `gpt-4-turbo-2024-04-09`, the paper's judge)
-- `--judge_api_key` / `--judge_api_key_file`: Judge API key (default: `OPENAI_API_KEY`)
-- `--judge_base_url`: Any OpenAI-compatible endpoint, e.g. a local `vllm serve` server (default: OpenAI)
-- `--judge_max_tokens`: Answer token budget (default: 10; raise it for reasoning models)
-- `--judge_temperature`: Judge temperature (default: 0.0)
-- `--judge_system_prompt`: Optional system message (default: none)
-- `--judge_prompt_file`: Custom prompt template with `{prompt1}`, `{code1}`, `{prompt2}`, `{code2}`
-- `--judge_delay`: Seconds between judge calls (default: 0)
-- `--similarity_path`: Similarity sidecar to read and extend (default: next to the results file)
-- `--rejudge_failed`: Retry pairs whose previous judge call failed (default: True)
-
-**Examples:**
-
-```bash
-# Default analysis: all metrics, paper judge (needs an OpenAI key the first time)
-evaloop analyze --results_path "results/my_experiment_results.json" --judge_api_key_file api.key
-
-# Use a self-hosted judge through vLLM's OpenAI-compatible server
-vllm serve Qwen/Qwen2.5-72B-Instruct --port 8000
-evaloop analyze --results_path "results/exp.json" \
-                 --judge_model "Qwen/Qwen2.5-72B-Instruct" \
-                 --judge_base_url "http://localhost:8000/v1"
-
-# Skip the judge: metrics that only need the loop counts
-evaloop analyze --results_path "results/exp.json" \
-                 --metrics "ASL_pow,ASL_bias,pass@1,pass_drop" \
-                 --output_dir "analysis/custom/"
-```
-
-**Outputs** (in `--output_dir`): `analysis_results.json` (all metric values per model, the loop
-histogram `n_i`, and judge statistics such as the bucket weights `s_i`), `analysis_summary.txt`,
-and the plots. Judge scores go to the similarity sidecar next to the results file.
-
-### `list_models` — Available Models
-
-```bash
-evaloop list_models
-```
-
-### `validate_setup` — System Validation
-
-```bash
-evaloop validate_setup [--check_gpu=False] [--check_api_keys=False]
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-```bash
-export OPENAI_API_KEY="your-openai-api-key"
-export ANTHROPIC_API_KEY="your-anthropic-api-key"  # Optional
-```
-
-### Model Configuration
-
-EvaLoop automatically configures models based on their names/paths:
-
-- **OpenAI models**: `gpt-4`, `gpt-3.5-turbo`, `gpt-4-turbo`
-- **HuggingFace paths**: `meta-llama/Llama-3-70b-instruct-hf`
-- **Pre-registered names**: use `evaloop list_models` to see available options
-
-Large models automatically use vLLM for efficient inference when it is installed (`pip install -e ".[vllm]"`).
-
-## 📊 Results and Analysis
-
-### Output Structure
-
-Results are saved in JSON format:
-
-```json
-{
-  "model": "gpt-4",
-  "max_cycles": 10,
-  "prompt_results": [
-    {
-      "task_id": "Mbpp/2",
-      "initial_prompt": "Write a function to find the shared elements ...",
-      "cycles": [...],
-      "successful_cycles": 5,
-      "max_cycles_reached": false
-    }
-  ],
-  "average_successful_cycles": 4.2
-}
-```
-
-### Metrics
-
-`evaloop analyze` reports `ASL` (the headline score, used by default), `ASL_pow`, `ASL_bias`,
-`pass@1` and `pass_drop`. How each one is computed is described in [Scoring](#-scoring).
-
-### Visualization
-
-`evaloop analyze` writes three plots to the output directory: `asl_comparison.png` (ASL per
-model), `cycle_distribution.png` (histogram of sustained loops) and `success_heatmap.png`
-(sustained loops per task and model, first 50 tasks).
-
-## 📐 Scoring
-
-The scores below are the ones used in the paper and on the [leaderboard](https://evalooop.github.io/);
-`evaloop analyze` reproduces the published values exactly when given the same results and judge scores.
-
-### Notation
-
-- **T**: number of tasks in the run (378 for MBPP Plus).
-- **M**: maximum number of loops (`max_cycles`, 10 by default).
-- **i**: number of loops a task *sustains* (`successful_cycles` in the results file): its code passed
-  the tests in loops 1..i and failed in loop i+1. `i = 0` means it already failed in the first loop,
-  `i = M` means it never failed.
-- **n_i**: number of tasks that sustain exactly i loops.
-- **pass@k**: number of tasks that sustain at least k loops (so pass@1 is the usual one-shot pass count).
-
-### ASL: the headline score (default)
-
-```
-ASL = Σ_{i=1..M} n_i · i² · s_i / (T · M)          range [0, M]
-```
-
-- **i²** rewards sustained correctness quadratically: surviving 8 loops counts 4× as much as surviving 4.
-- **s_i** is the semantic similarity weight of bucket i. It discounts tasks whose last successful
-  loop had already drifted away from the original intent.
-
-**How s_i is obtained.** For every task with a failure boundary (`1 ≤ i < M`), an LLM judge
-compares the last successful transition with the failing one:
-
-| | Prompt | Code |
-|---|---|---|
-| Side 1 | prompt that fed loop i (the original task if i = 1, else the summary written in loop i−1) | code generated in loop i (passed) |
-| Side 2 | summary written in loop i, i.e. the prompt of loop i+1 | code generated in loop i+1 (failed) |
-
-The judge returns a score `sim ∈ [0, 1]`. A task that sustained i loops went through i prompt
-transitions; the first i−1 produced passing code, so they count as similarity 1.0, and only the
-boundary transition uses the judge score. With `m_i` the mean judge score of the tasks in bucket i:
-
-```
-s_i = (m_i + (i − 1)) / i        for 1 ≤ i < M
-s_i = 1                          for i = M (never failed) and for buckets without judge scores
-```
-
-Because the mean is linear, this equals giving every boundary task the weight `i · (i − 1 + sim)`
-instead of `i²`, so `ASL ≤ ASL_pow` and the gap is `Σ_tasks i · (1 − sim) / (T · M)`.
-
-*Example:* with T = 378 and M = 10, a task that sustains 4 loops and gets a judge score of 0.85
-contributes `4 · (3 + 0.85) / 3780 = 0.00407` to ASL, versus `16 / 3780 = 0.00423` without the
-similarity weighting.
-
-### All metrics
-
-| Metric | Formula | Range | What it measures | Leaderboard field |
-|---|---|---|---|---|
-| `ASL` | Σ n_i · i² · s_i / (T · M) | [0, M] | Headline robustness score (default) | `semanticSimilarityScore`, shown as "ASL" |
-| `ASL_pow` | Σ n_i · i² / (T · M) | [0, M] | ASL without semantic weighting (all s_i = 1) | `aslScore` |
-| `ASL_bias` | Σ n_i · i² / (pass@1 · M) | [0, M] | Robustness on the tasks the model solves at all, independent of one-shot accuracy (0 if pass@1 = 0) | `robustnessScore` |
-| `pass@1` | pass@1 / T | [0, 1] | One-shot accuracy | `successRate` |
-| `pass_drop` | (pass@1 − pass@M) / T | [0, 1] | Absolute accuracy lost within M loops | "drop" (as a percentage) |
-
-Only `ASL` needs the judge; the other metrics use the loop counts alone. The leaderboard also
-averages repeated runs of a model and only lists models with `pass@1 > 0.2` and `ASL_bias > 3`;
-those steps happen outside this package.
-
-### Similarity judge
-
-- **Default:** `gpt-4-turbo-2024-04-09` at temperature 0 with a 10-token answer budget, no system
-  message and the paper's prompt (`evaloop.analysis.similarity.DEFAULT_JUDGE_PROMPT`). Scores
-  from a different judge or prompt are not comparable with the leaderboard, so compare models
-  only under the same judge.
-- **Changing the judge:** the judge is served through the same API layer as the evaluated models
-  (`OpenAILLM`), so any OpenAI-compatible endpoint works via `--judge_model`, `--judge_base_url`
-  and `--judge_api_key(_file)`. In Python, pass `judge_config=JudgeConfig(...)` to
-  `ResultAnalyzer`, or wrap any `BaseLLM` in `SemanticSimilarityJudge(llm)` and pass it as
-  `judge=...`.
-- **Caching:** scores are stored in a sidecar next to the results file,
-  `<results stem>_<judge>_similarity_scores.json`, as
-  `{"<task_id>_cycle_<i>": {"score": ..., "input_sha256": ...}}`. The judge is only called for pairs
-  missing from the sidecar, so reruns are free and an interrupted run resumes where it stopped. No
-  API key is needed when the sidecar is complete.
-- **Cache validation:** `input_sha256` fingerprints the exact judge prompt (the four judged strings
-  rendered into the template). If a results file is overwritten (e.g. `evaluate` rerun with the same
-  `--experiment_name`) or the prompt template changes, mismatching entries are re-judged with a
-  warning instead of being mixed into the new run. Sidecars from the published data archive
-  (`{"<task_id>_cycle_<i>": score}`, no hash) are still accepted; their entries cannot be verified
-  and are used as is.
-- **Failures:** if the judge call fails or its answer cannot be parsed, the pair is stored as
-  `null`, left out of its bucket mean (with a warning), and retried on the next run
-  (`--rejudge_failed=False` keeps it as is). The original scripts recorded such failures as 0.0.
-- **Parsing:** a bare number is used directly; otherwise the first number that looks like a score
-  is taken. Results are clamped to [0, 1].
-
-### Programmatic scoring
-
-```python
-from evaloop.analysis.analyzer import ResultAnalyzer
-from evaloop.analysis.similarity import JudgeConfig
-
-analyzer = ResultAnalyzer(
-    "results/exp_results.json",
-    "results/analysis",
-    judge_config=JudgeConfig(model="gpt-4-turbo-2024-04-09", api_key="sk-..."),
-)
-results = analyzer.analyze()          # all metrics; results["ASL"]["by_model"][model_name]
-```
-
-The pure metric functions (`asl_semantic`, `asl_pow`, `asl_bias`, `pass_at_k`, `pass_drop`,
-`bucket_similarity`) live in `evaloop.analysis.metrics`.
-
-## 🧪 Advanced Usage
-
-### Custom Model Registration
-
-```python
-from evaloop.models.registry import ModelRegistry
-
-registry = ModelRegistry()
-registry.register_model("my-custom-model", {
-    "name": "my-custom-model",
-    "type": "vllm",
-    "path": "path/to/my/model",
-    "max_model_len": 4096,
-    "tensor_parallel_size": 2
-})
-```
-
-### Programmatic API
-
-```python
-from evaloop.core.config import EvaluationConfig
-from evaloop.core.evaluator import EvaLoopEvaluator
-
-config = EvaluationConfig(
-    model="gpt-4",
-    dataset="mbpp_plus",
-    max_cycles=10,
-    temperature=0.0,
-)
-
-evaluator = EvaLoopEvaluator(config)
-results = evaluator.run_code_generation_summarization()
-```
-
-### Batch Processing
-
-```bash
-# Process multiple experiments
-for model in "gpt-4" "gpt-3.5-turbo" "deepseek-coder-33b"; do
-    evaloop evaluate --model "$model" \
-                     --experiment_name "batch_${model}" \
-                     --output_dir "results/batch/"
-done
-
-# Analyze all results
-for result in results/batch/*_results.json; do
-    evaloop analyze --results_path "$result"
-done
-```
-
-## 🤝 Contributing
-
-We welcome contributions — new loop/task types especially! Please see the [Contributing Guide](CONTRIBUTING.md) for the development setup, the "add a new loop type" walkthrough, and PR expectations.
-
-### Development Setup
-
-```bash
-git clone https://github.com/evalooop/EvaLooop
-cd EvaLooop
-pip install -e ".[dev]"
-```
-
-### Running Tests
-
-```bash
-pytest
-ruff check evaloop tests
-```
-
-The unit test suite runs without GPU, API keys, or the heavy model dependencies.
-
-## 📖 Citation
-
-If you use EvaLoop in your research, please cite:
-
-```bibtex
-@article{fang2024evaloop,
-  title={EvaLoop: Assessing LLM Robustness in Programming from a Self-consistency Perspective},
-  author={Fang, Sen and Ding, Weiyuan and Xu, Bowen},
-  journal={arXiv preprint arXiv:2505.12185},
-  year={2024},
-  url={https://arxiv.org/abs/2505.12185}
-}
-```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built with [Python Fire](https://github.com/google/python-fire) for CLI interface
-- Uses [vLLM](https://github.com/vllm-project/vllm) for efficient model inference
-- Evaluation dataset from [MBPP](https://github.com/google-research/google-research/tree/master/mbpp)
-- Code testing powered by [EvalPlus](https://github.com/evalplus/evalplus)
-
-## 📞 Support
-
-- 🏆 [Leaderboard](https://evalooop.github.io/)
-- 📄 [Paper](https://arxiv.org/abs/2505.12185)
-- 🐛 [Issue Tracker](https://github.com/evalooop/EvaLooop/issues)
+# EvaLoop extension: the anchor-leak ablation
+
+A fork of [evalooop/EvaLooop](https://github.com/evalooop/EvaLooop) that makes
+EvaLoop's cross-cycle anchor explicit and swappable, so the contribution of the
+one piece of ground truth that re-enters the loop on every cycle can be measured
+instead of assumed.
+
+> **Public fork:** `<add your fork URL here before submitting>`
+> **Branch:** `anchor-ablation` · **Upstream base:** `evalooop/EvaLooop@ce22fe2` (branch `dev`)
+> **Patch against upstream:** `evaloop-anchor-ablation.patch`
+> **Upstream's own README** is preserved verbatim as
+> [`README.upstream.md`](README.upstream.md) - it documents the framework itself,
+> which this file does not duplicate.
 
 ---
 
-**EvaLoop** - Robust LLM Evaluation Made Simple 🔄
+## 1. What this extends, and why
+
+EvaLoop feeds a model its own output: generate code from a description, test it,
+summarize the code, and let that summary become the next description. The number
+of cycles sustained is the robustness score (ASL).
+
+One string in that loop never degrades. `CodeSummarizationTask.postprocess`
+takes the **final assert line of the original dataset prompt** and appends it to
+every summary, forever. It is there for a real reason - a summary does not fix
+the function's name, so without it the tests could not call the generated code -
+but it carries more than a name. It carries one concrete input together with its
+**ground-truth expected output**, re-injected from outside the loop on every
+single cycle, in a framework whose premise is that the model's own output is the
+only source of perturbation.
+
+Three measurements on the provided data package motivated the extension:
+
+| Measurement | Value |
+|---|---|
+| Spearman(pass@1, ASL) across all 107 leaderboard models | **0.945** (Pearson R² = 0.81) |
+| Loops that pass cycle 1 and then survive all 10 cycles | **~91%** (median model) |
+| Mid-loop failures per model, out of 378 tasks | **median 26** |
+| Cycles whose generated code contains an echoed module-level assert | **33.4%** of all 165,630 (0% gemini-2.0-flash, 99.5% gpt-5) |
+
+ASL is close to rank-equivalent with one-shot accuracy, because the loop barely
+perturbs anything - and a third of all cycles copy the leaked assertion straight
+into the solution.
+
+> **Research question.** How much of EvaLoop's measured robustness is the model
+> sustaining its own specification, and how much is a re-injected ground-truth
+> anchor holding the task still?
+
+Hypotheses, metrics, sampling and the failure codebook were fixed in
+[`PREREGISTRATION.md`](PREREGISTRATION.md) before any run.
+
+## 2. The extension
+
+One loop, three anchors. Generation prompt, summarization prompt, wrapper shape,
+failure condition and decoding settings are all held fixed; only the anchor line
+changes.
+
+| Arm | Anchor | Carries | Source |
+|---|---|---|---|
+| **A0** `assert` | `assert find_length("11000010001") == 6` | name, arity, inputs, **expected output** | original prompt, constant — **this is upstream** |
+| **A1** `masked_assert` | `assert find_length('11000010001') == ...` | name, arity, inputs | original prompt, oracle masked by AST |
+| **A2** `signature` | `def find_length(s):` | name, parameter names | **the model's own code**, re-read each cycle |
+
+A1 − A0 isolates the leaked oracle. A2 − A1 isolates the remaining
+ground-truth-derived argument values. A2 is the only arm in which nothing but
+model output crosses the cycle boundary.
+
+Two properties worth stating plainly:
+
+* **Cycle 1 is byte-identical in all three arms** (same prompt, same greedy
+  settings), so `pass@1` is equal across arms *by construction*, and any
+  difference in ASL is attributable to the anchor alone. The call cache makes
+  this real rather than notional: the later arms replay cycle 1 from disk.
+* **Signature stability**, which the assignment requires any Option B design to
+  solve, is handled by parsing the code that just *passed* and emitting the
+  `def` line of the function named by the dataset's `entry_point`. That code
+  passed the benchmark's tests, so a callable function with the right name and
+  arity exists by construction.
+
+### The confound that had to be controlled
+
+A1's anchor contains `== ...`. A model that copies it into its answer raises
+`AssertionError` and fails for a *formatting* reason, not an information one -
+and echo rates range from 0% to 99.5% by model, so this would have quietly
+turned "echoes a lot" into "looks fragile". Worse, an echoed assertion is part of
+the code that gets summarized next, so a summary could restate the expected
+output in prose and re-inject exactly the oracle the ablation removes.
+
+So **module-level `assert` statements are stripped from generated code before
+testing and before summarization, in every arm including the baseline.** Applying
+it uniformly is what keeps the arms comparable. It is a deliberate deviation from
+upstream, and `scripts/retest_package_code.py` measures its effect on published
+verdicts directly.
+
+## 3. What was modified upstream, and why
+
+The extension is mostly new files. Four existing files were touched, all
+additively:
+
+| File | Change | Why |
+|---|---|---|
+| `evaloop/evaluation/cycle.py` | expose `task_input` in the `postprocess` context, in both the batch and sequential paths | The signature anchor must derive from the code the model just produced; upstream's context carried only the cycle-start input. Existing tasks ignore the new key. |
+| `evaloop/tasks/base.py` | document the new context key | It is part of the hook contract. |
+| `evaloop/tasks/__init__.py` | register the two new task types | Follows the existing registry convention. |
+| `evaloop/models/factory.py` | import backends on use; register `gemini`/`google` | An API-only run should not need torch installed, and a local run should not need the Gemini SDK. Extends the lazy-import convention the repo already asserts for its CLI. |
+| `evaloop/core/evaluator.py` | import `py_testing` (and so evalplus) inside the two methods that use it | The generation stage talks to an API and never executes model output; it should not need the execution machinery at all. Same convention. |
+
+Everything else is new: `evaloop/anchors/`, two task types, a Gemini backend, the
+call cache, the sandboxed tester, the anchored evaluator, and the scripts.
+
+**Things deliberately *not* reimplemented.** `evaloop/analysis/metrics.py`
+already implements `asl_pow`, `asl_bias`, `asl_semantic` and `pass_drop` exactly
+as the leaderboard defines them, and `evaloop/analysis/similarity.py` already
+holds the paper's byte-identical judge prompt, score parser, boundary-pair
+definition and score cache. Both are reused as-is.
+
+## 4. Reproducing every reported number
+
+### Setup
+
+```bash
+git clone <your fork> && cd EvaLooop && git checkout anchor-ablation
+
+# Generation stage: no evalplus, no torch, never executes model output.
+python3 -m venv .venv-gen
+.venv-gen/bin/pip install google-genai pyyaml tqdm pytest
+
+# Testing stage: a Linux container (see "Why a container" below).
+./docker/run.sh setup        # build, warm the EvalPlus cache, verify isolation
+
+export GEMINI_API_KEY="..."  # or pass --use-vertex for Vertex AI
+```
+
+### Validation gates — run these before trusting anything
+
+```bash
+# 1. Our metrics reproduce the published leaderboard.
+.venv-gen/bin/python scripts/validate_leaderboard.py --data-dir ../assignment2-data
+#    -> 56/60 models exact. The other 4 are the multi-run models the data
+#       package README documents (leaderboard averages 5 runs; loops/ ships exp_1).
+
+# 2. The A0 arm *is* upstream's loop, checked against the recorded data.
+.venv-gen/bin/python scripts/validate_anchors_on_package.py --data-dir ../assignment2-data
+#    -> 165,630/165,630 recorded cycle transitions reproduced byte-for-byte.
+
+# 3. Our tester reproduces published pass/fail verdicts, and assert-stripping
+#    does not change them.
+.venv-gen/bin/python scripts/retest_package_code.py --n 400
+
+# 4. Unit and loop tests (no API, no code execution).
+.venv-gen/bin/python -m pytest tests/ -q
+```
+
+### The experiment
+
+```bash
+# The 150-task subset (seed-fixed, stratified, with its own fidelity check).
+.venv-gen/bin/python scripts/sample_tasks.py --data-dir ../assignment2-data --n 150 --seed 20251013
+#    -> ranking fidelity Spearman rho = 0.9372 across the 60 package models
+
+# Metadata the generation stage needs (two strings per task, no evalplus).
+.venv-gen/bin/python scripts/export_dataset_meta.py --source package --data-dir ../assignment2-data
+#    -> entry points confirmed against stored passing code: 367/378, 0 contradicted
+
+# All models, all three arms. Models run in parallel, anchors in sequence.
+./scripts/run_overnight.sh
+```
+
+### Analysis
+
+```bash
+.venv-gen/bin/python scripts/summarize_runs.py --results-dir results --full  # summary.csv + metrics.csv
+.venv-gen/bin/python scripts/stats.py --results-dir results                  # paired CIs, Wilcoxon
+.venv-gen/bin/python scripts/judge_similarity.py --results-dir results       # boundary similarity
+.venv-gen/bin/python scripts/failure_sampler.py --results-dir results --per-arm 10
+```
+
+## 5. Models and settings
+
+The Gemini 2.5 series - the only models with baselines in the data package - now
+returns `404 ... no longer available to new users`, so no evaluated model has a
+published baseline and **the A0 arm run here is the baseline**. That is what the
+assignment requires for Option B anyway ("the same models on the same tasks under
+the standard loop"), and it removes a threat the data package introduces: its
+`prompts/task_prompts.md` documents a *different* summarization prompt from the
+one its data shows (see §7), so a published baseline would not have been strictly
+comparable.
+
+All runs: greedy (`temperature=0`, `top_p=1.0`), `max_output_tokens=1024`,
+`seed=20251013`, thinking set to `minimal`, max 10 cycles, one run per
+configuration, 150 MBPP+ tasks.
+
+Thinking is pinned deliberately. Current Gemini models think by default, which
+changes both the output distribution and the cost; `gemini-3.x` rejects
+`thinking_budget` and takes `thinking_level` instead, and the client enforces
+that only one of the two is set.
+
+## 6. Why a container, and what it guarantees
+
+Generated code is untrusted. The pipeline is split by trust level: the
+**generation** stage talks to the API and never executes a line of model output;
+the **testing** stage executes it inside a container with no network, as a
+non-root user, with dropped capabilities, a read-only repo mount and
+memory/CPU/pid caps. The test image carries no model SDK and is given no API key,
+so it could not reach a provider even if the code it runs tried.
+
+The container is also required for *correctness*, not only safety: EvalPlus's
+`reliability_guard` sets `RLIMIT_AS`, which macOS rejects with `current limit
+exceeds maximum limit`, so the MBPP+ suites cannot run natively on a Mac host at
+all. `./docker/run.sh check` verifies each property.
+
+Testing is batched per cycle, so a 10-cycle run costs 10 container launches
+rather than one per task per cycle.
+
+### Resumability and cost control
+
+Every successful model call is cached to `cache/<model>.jsonl`, keyed by the
+prompt and every decoding setting that can change the output. Completions are
+written as they arrive, not per batch, so an interrupted run resumes from the
+exact cycle it stopped at and re-analysis costs nothing. Failures are never
+cached.
+
+A call that exhausts its retry budget - essentially always sustained throttling -
+**aborts the run** rather than returning an error string that would be tested as
+if it were code, failed, and recorded as the model failing to sustain the loop.
+That would bias ASL downward for reasons unrelated to the model or the anchor,
+and nothing in the output would have said so.
+
+## 7. Two discrepancies in the provided material
+
+Both are reported in the write-up; neither is a defect in the fork.
+
+1. **The data package's documented summarization prompt is not the one used.**
+   `prompts/task_prompts.md` specifies "Summarize what the following code does in
+   a detailed description". But 8,839 of the sampled summaries open with "write a
+   python function to" and the median summary is ~28 words - one sentence. The
+   prompt actually used is the one-sentence variant in the framework's own
+   `core/config.py` and in `experiments/generation_summarization.yaml`. **This
+   fork uses the latter**; the former would not reproduce the published data.
+2. **`passDrop` means two different things.** The leaderboard column is a raw
+   *task count* (pass@M − pass@1); the framework's `metrics.pass_drop` returns a
+   *fraction of T*. Comparing a fresh run against the published column without
+   noticing is wrong by a factor of T/100. `scripts/validate_leaderboard.py`
+   compares against the count and says so.
+
+## 8. Deliverables map
+
+| Deliverable | Where |
+|---|---|
+| Report (≤3 pages) | `report.pdf` |
+| Public fork link | top of this file |
+| Patch against upstream | `evaloop-anchor-ablation.patch` |
+| Results JSON per (model, configuration) | `results/<model>__<anchor>.json`, in the data package's schema |
+| `summary.csv` | `results/summary.csv` (`model,configuration,n_tasks,success_rate,asl_score`) |
+| Pre-registration | `PREREGISTRATION.md` |
+| Manual failure coding | `analysis/failures_to_code.csv`, `analysis/failures_key.json` |
+
+Per the assignment, the data package itself is **not** redistributed here;
+records are referenced by `model_id`, `task_id` and `cycle`.

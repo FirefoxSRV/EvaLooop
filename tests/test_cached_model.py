@@ -133,20 +133,44 @@ class TestBatchGenerate:
         inner = FakeBatchLLM()
         model = CachingLLM(inner, str(cache_file))
         model.batch_generate(["a", "b"])
-        inner.batches.clear()
+        inner.calls.clear()
         results = model.batch_generate(["a", "b", "c"])
-        # Only the new prompt is fanned out; the two cached ones are served locally.
-        assert inner.batches == [["c"]]
+        # Only the new prompt reaches the model; the two cached ones are local.
+        assert inner.calls == ["c"]
         assert [r.split("::")[1] for r in results] == ["a", "b", "c"]
 
     def test_a_fully_cached_batch_makes_no_call(self, cache_file):
         inner = FakeBatchLLM()
         model = CachingLLM(inner, str(cache_file))
         model.batch_generate(["a", "b"])
-        inner.batches.clear()
+        inner.calls.clear()
         model.batch_generate(["a", "b"])
-        assert inner.batches == []
+        assert inner.calls == []
         assert model.cache_report()["hit_rate"] > 0
+
+    def test_completions_are_written_as_they_arrive_not_at_the_end(self, cache_file):
+        """A batch must not hold finished completions until its slowest call lands.
+
+        Otherwise an interrupted run discards a whole cycle of paid calls, and a
+        long run shows no progress on disk.
+        """
+        observed = []
+
+        class SlowLastLLM(FakeLLM):
+            def generate(self, prompt, **kwargs):
+                if prompt == "slow":
+                    # By the time the slow call runs, the fast ones must already
+                    # be durable on disk.
+                    observed.append(cache_file.read_text().count("\n"))
+                return super().generate(prompt, **kwargs)
+
+        model = CachingLLM(SlowLastLLM(), str(cache_file))
+        model._concurrency = lambda: 1  # deterministic ordering for the assertion
+        model.batch_generate(["fast1", "fast2", "slow"])
+
+        assert observed, "the slow prompt never ran"
+        assert observed[0] == 2, f"expected 2 records already written, saw {observed[0]}"
+        assert cache_file.read_text().count("\n") == 3
 
     def test_empty_batch(self, cache_file):
         assert CachingLLM(FakeBatchLLM(), str(cache_file)).batch_generate([]) == []

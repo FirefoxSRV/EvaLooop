@@ -27,6 +27,7 @@ import hashlib
 import json
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -142,7 +143,17 @@ class CachingLLM(BaseLLM):
         return response
 
     def batch_generate(self, prompts: List[str], **kwargs) -> List[str]:
-        """Serve cached prompts locally and fan only the misses out to the model."""
+        """Serve cached prompts locally and fan only the misses out to the model.
+
+        Misses go through :meth:`generate` on a thread pool rather than through
+        the inner client's own ``batch_generate``. That matters because the
+        inner batch call only returns once every prompt in it has finished, so
+        caching its results afterwards would leave a whole cycle's worth of
+        completed calls unwritten until the slowest one landed - an interruption
+        would discard them all, and a long run would show no progress. Routing
+        each miss through ``generate`` writes every completion to disk as it
+        arrives, which is what makes a run genuinely resumable.
+        """
         if not prompts:
             return []
 
@@ -156,20 +167,22 @@ class CachingLLM(BaseLLM):
         if not pending:
             return [r for r in results]  # type: ignore[misc]
 
-        inner_batch = getattr(self.inner, "batch_generate", None)
-        missing = [prompts[i] for i in pending]
-        fresh = inner_batch(missing, **kwargs) if callable(inner_batch) else [
-            self.inner.generate(p, **kwargs) for p in missing
-        ]
+        workers = min(self._concurrency(), len(pending))
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                fresh = list(pool.map(lambda p: self.generate(p, **kwargs),
+                                      (prompts[i] for i in pending)))
+        else:
+            fresh = [self.generate(prompts[i], **kwargs) for i in pending]
 
-        with self._lock:
-            self.misses += len(pending)
         for idx, response in zip(pending, fresh):
             results[idx] = response
-            if not response.startswith("Error generating response"):
-                self._append(keys[idx], prompts[idx], response)
 
         return [r for r in results]  # type: ignore[misc]
+
+    def _concurrency(self) -> int:
+        """In-flight request budget, taken from the wrapped client."""
+        return max(1, int(getattr(self.inner, "concurrency", 1) or 1))
 
     def cache_report(self) -> Dict[str, Any]:
         """Hit/miss counts, used to assert that cycle 1 was shared across arms."""

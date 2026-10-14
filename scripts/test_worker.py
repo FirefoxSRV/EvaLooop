@@ -20,6 +20,11 @@ Stdout carries only the JSON payload; logs and EvalPlus chatter go to stderr.
 
 import json
 import sys
+from pathlib import Path
+
+# Running "python scripts/test_worker.py" puts scripts/ on sys.path, not the
+# repo root, so make the package importable regardless of how it is invoked.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def main() -> int:

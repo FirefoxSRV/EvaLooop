@@ -23,8 +23,14 @@ RUN pip install --no-cache-dir "evalplus>=0.2.0"
 
 # Dataset and ground-truth cache, bind-mounted from the host so the 378-task
 # oracle is computed once overall rather than once per container launch.
-ENV EVALPLUS_CACHE_DIR=/cache \
+# evalplus resolves its cache with platformdirs.user_cache_dir("evalplus"),
+# which on Linux follows XDG_CACHE_HOME. Pointing that at the bind mount is what
+# makes the warmed dataset and oracles visible to a --network none container;
+# with HOME=/tmp alone they would land in the ephemeral tmpfs and be
+# re-downloaded (which a no-network container cannot do).
+ENV XDG_CACHE_HOME=/cache \
     HOME=/tmp \
+    PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 RUN mkdir -p /cache && chmod 777 /cache

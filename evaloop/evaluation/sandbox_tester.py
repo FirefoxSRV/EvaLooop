@@ -120,7 +120,7 @@ class DockerSandboxTester:
             "--mount", f"type=bind,source={self.repo_root},target=/app,readonly",
             "--mount", f"type=bind,source={self.cache_dir},target=/cache",
             "--tmpfs", "/tmp:rw,size=256m,exec",
-            "--env", "EVALPLUS_CACHE_DIR=/cache",
+            "--env", "XDG_CACHE_HOME=/cache",
             "--env", "HOME=/tmp",
             "--workdir", "/app",
             self.image,

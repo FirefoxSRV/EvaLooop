@@ -53,6 +53,7 @@ run_model() {
       --max-cycles "$MAX_CYCLES" \
       --thinking-level minimal \
       --concurrency "$conc" \
+      --requests-per-minute "${RPM:-28}" \
       --tester docker \
       --output-dir "$OUT_DIR" \
       --log-level WARNING \

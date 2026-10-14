@@ -43,8 +43,9 @@ import random
 import re
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 from .base import BaseLLM
 
@@ -52,6 +53,45 @@ logger = logging.getLogger(__name__)
 
 #: Returned instead of raising, mirroring OpenAILLM, so one bad task cannot end a run.
 ERROR_PREFIX = "Error generating response"
+
+
+class RateLimiter:
+    """Paces requests to stay under a requests-per-minute cap.
+
+    Retries are the wrong tool for a known, fixed quota. Firing a cycle's worth
+    of requests at once and letting most of them bounce off a 30/minute limit
+    wastes the whole budget on backoff, and a request unlucky enough to lose the
+    race repeatedly can exhaust its retries and fail a task that the model never
+    actually got to attempt. Pacing the requests instead means almost none are
+    rejected: the same work, far fewer 429s, and no spurious failures.
+
+    A sliding window rather than a fixed one, because providers measure the last
+    60 seconds, not wall-clock minutes.
+    """
+
+    def __init__(self, requests_per_minute: Optional[int]):
+        """``None`` or a non-positive value disables pacing."""
+        self.rpm = requests_per_minute if (requests_per_minute or 0) > 0 else None
+        self._lock = threading.Lock()
+        self._recent: Deque[float] = deque()
+        self.total_waited = 0.0
+
+    def acquire(self) -> None:
+        """Block until sending one request stays within the cap."""
+        if self.rpm is None:
+            return
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                while self._recent and now - self._recent[0] >= 60.0:
+                    self._recent.popleft()
+                if len(self._recent) < self.rpm:
+                    self._recent.append(now)
+                    return
+                # Wait only until the oldest request ages out of the window.
+                sleep_for = 60.0 - (now - self._recent[0]) + 0.01
+            self.total_waited += sleep_for
+            time.sleep(sleep_for)
 
 
 class GeminiLLM(BaseLLM):
@@ -84,6 +124,11 @@ class GeminiLLM(BaseLLM):
         # repeat runs as reproducible as the API allows.
         self.seed = model_config.get("seed")
         self.concurrency = max(1, int(model_config.get("concurrency", 16)))
+        # Pace requests under the provider's per-minute quota instead of
+        # discovering it through 429s. Leave headroom: the window the provider
+        # measures and the one measured here never line up exactly.
+        self.requests_per_minute = model_config.get("requests_per_minute")
+        self._limiter = RateLimiter(self.requests_per_minute)
 
         self._usage_lock = threading.Lock()
         #: Cumulative token counts, for the cost table, plus retry/throttle
@@ -228,6 +273,7 @@ class GeminiLLM(BaseLLM):
         last_error: Optional[Exception] = None
         for attempt in range(self.MAX_RETRIES + 1):
             try:
+                self._limiter.acquire()
                 response = self._client.models.generate_content(
                     model=self.model_id, contents=prompt, config=config
                 )
@@ -316,6 +362,10 @@ class GeminiLLM(BaseLLM):
             report = dict(self.usage)
         report["model_id"] = self.model_id
         report["model_versions"] = sorted(self.model_versions)
+        report["pacing"] = {
+            "requests_per_minute": self.requests_per_minute,
+            "seconds_waited_for_pacing": round(self._limiter.total_waited, 1),
+        }
         report["settings"] = {
             "temperature": self.temperature,
             "top_p": self.top_p,

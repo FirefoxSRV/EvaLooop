@@ -58,6 +58,7 @@ def build_model(model_id: str, args) -> CachingLLM:
         "max_tokens": args.max_tokens,
         "seed": args.seed,
         "concurrency": args.concurrency,
+        "requests_per_minute": args.requests_per_minute or None,
     }
     # Only one thinking knob is valid per model generation; see models/gemini.py.
     if args.thinking_level:
@@ -118,6 +119,10 @@ def main() -> int:
     parser.add_argument("--concurrency", type=int, default=8,
                         help="Parallel in-flight requests. Raising this past the "
                              "provider's requests-per-minute cap only adds retries.")
+    parser.add_argument("--requests-per-minute", type=int, default=28,
+                        help="Pace requests under the provider's per-minute quota "
+                             "instead of discovering it through 429s. The free tier "
+                             "allows 30/min per model; 28 leaves headroom. 0 disables.")
     parser.add_argument("--use-vertex", action="store_true",
                         help="Authenticate to Vertex AI with application default "
                              "credentials instead of using GEMINI_API_KEY")

@@ -89,6 +89,31 @@ within 120 s per call; they are excluded rather than run with a different
 timeout regime from the others. A third model will be added only if it clears
 the same reliability bar, and its addition will be noted here.
 
+**Second amendment, 2026-10-14 19:24, after the first model's three arms
+completed and before any third-model result existed.** Both earlier timeouts
+turned out to be my own doing: the probes were competing with a quota I had
+saturated, not failing. Re-probed on an idle quota, `gemma-4-31b-it` answers in
+1.8 s and `gemini-3.5-flash-lite` in 3.1 s. The evaluated set is therefore:
+
+* `gemma-4-26b-a4b-it` — all three arms (complete)
+* `gemma-4-31b-it` — all three arms
+* `gemini-3.5-flash-lite` — **arms A0 and A2 only**
+
+The third model runs two arms rather than three for a stated, non-adaptive
+reason: its account allows 500 requests per day, and A0 + A2 fits inside one
+day's quota while all three arms would not. A0 vs A2 is the headline contrast
+(oracle present vs absent); A1 is the intermediate rung and is reported for the
+two Gemma models only. This was decided from the quota arithmetic before the
+run started, not after seeing which arms were favourable.
+
+Adding a model from a different family is what makes the pre-registered
+cross-model question ("does the ranking change?") answerable at all; with two
+same-family models it would have been a coin flip between near-identical
+systems. Reported as an amendment because changing the evaluated set after
+seeing the first model's results is exactly what a pre-registration exists to
+expose: the first model's A0→A2 effect (ΔASL −0.526, p = 0.020) was already
+known when this decision was made.
+
 Consequence for the baseline: **no evaluated model has a published baseline, so
 the A0 (`assert`) arm run here is the baseline.** This is what the assignment
 requires for Option B regardless ("the same models on the same tasks under the

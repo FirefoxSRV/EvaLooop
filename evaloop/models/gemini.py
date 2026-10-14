@@ -25,8 +25,16 @@ Config::
      "project": "...", "location": "us-central1",   # Vertex AI only
      "temperature": 0.0, "top_p": 1.0,
      "max_tokens": 1024,
-     "thinking_budget": 0,
+     "seed": 20251013,
+     "thinking_budget": 0,          # Gemini 2.x: 0 disables thinking
+     "thinking_level": "minimal",   # Gemini 3.x: takes a level, not a budget
      "concurrency": 16}
+
+Only one thinking knob may be set. Gemini 2.x models accept
+``thinking_budget`` (0 disables thinking); Gemini 3.x models reject it and take
+``thinking_level`` (minimal/low/medium/high) instead. Setting neither leaves the
+model's default, which for every current model means thinking is *on* - that
+changes the output distribution and the cost, so a run should always pin it.
 """
 
 import logging
@@ -60,13 +68,27 @@ class GeminiLLM(BaseLLM):
         # Greedy by default: the protocol the published records were produced with.
         self.temperature = model_config.get("temperature", 0.0)
         self.top_p = model_config.get("top_p", 1.0)
-        # 0 disables thinking on the 2.5 series; None leaves the model default.
-        self.thinking_budget = model_config.get("thinking_budget", 0)
+        # Exactly one thinking knob, or neither; see the module docstring.
+        self.thinking_budget = model_config.get("thinking_budget")
+        self.thinking_level = model_config.get("thinking_level")
+        if self.thinking_budget is not None and self.thinking_level is not None:
+            raise ValueError(
+                "Set either thinking_budget (Gemini 2.x) or thinking_level "
+                "(Gemini 3.x), not both"
+            )
+        # Greedy decoding is still not bit-deterministic; a fixed seed makes
+        # repeat runs as reproducible as the API allows.
+        self.seed = model_config.get("seed")
         self.concurrency = max(1, int(model_config.get("concurrency", 16)))
 
         self._usage_lock = threading.Lock()
-        #: Cumulative token counts, for the cost table.
-        self.usage = {"calls": 0, "prompt_tokens": 0, "output_tokens": 0, "thoughts_tokens": 0}
+        #: Cumulative token counts, for the cost table, plus retry/throttle
+        #: counters: a run whose wall clock is dominated by backoff should say so
+        #: rather than look like slow inference.
+        self.usage = {
+            "calls": 0, "prompt_tokens": 0, "output_tokens": 0, "thoughts_tokens": 0,
+            "retries": 0, "rate_limited": 0, "backoff_seconds": 0.0, "failed_calls": 0,
+        }
         #: Resolved model version strings seen in responses.
         self.model_versions = set()
 
@@ -117,8 +139,16 @@ class GeminiLLM(BaseLLM):
             "max_output_tokens": max_tokens,
             "candidate_count": 1,
         }
-        if self.thinking_budget is not None:
-            kwargs["thinking_config"] = self._thinking_cls(thinking_budget=self.thinking_budget)
+        if self.seed is not None:
+            kwargs["seed"] = self.seed
+        if self.thinking_level is not None:
+            kwargs["thinking_config"] = self._thinking_cls(
+                thinking_level=str(self.thinking_level).upper()
+            )
+        elif self.thinking_budget is not None:
+            kwargs["thinking_config"] = self._thinking_cls(
+                thinking_budget=self.thinking_budget
+            )
         return self._config_cls(**kwargs)
 
     def _record_usage(self, response) -> None:
@@ -133,6 +163,12 @@ class GeminiLLM(BaseLLM):
                 self.usage["thoughts_tokens"] += getattr(meta, "thoughts_token_count", 0) or 0
             if version:
                 self.model_versions.add(version)
+
+    @staticmethod
+    def _is_rate_limit(exc: Exception) -> bool:
+        """True when the provider is throttling, as opposed to failing."""
+        text = str(exc).lower()
+        return any(m in text for m in ("429", "resource_exhausted", "rate limit", "quota"))
 
     @staticmethod
     def _is_retryable(exc: Exception) -> bool:
@@ -181,6 +217,12 @@ class GeminiLLM(BaseLLM):
                 if attempt < self.MAX_RETRIES and self._is_retryable(exc):
                     delay = min(self.BASE_RETRY_DELAY * 2 ** attempt, self.MAX_RETRY_DELAY)
                     delay *= 0.5 + random.random()  # jitter, to decorrelate workers
+                    throttled = self._is_rate_limit(exc)
+                    with self._usage_lock:
+                        self.usage["retries"] += 1
+                        self.usage["backoff_seconds"] += delay
+                        if throttled:
+                            self.usage["rate_limited"] += 1
                     logger.warning(
                         "Retryable error (attempt %d/%d), sleeping %.1fs: %s",
                         attempt + 1, self.MAX_RETRIES, delay, exc,
@@ -188,6 +230,8 @@ class GeminiLLM(BaseLLM):
                     time.sleep(delay)
                     continue
                 logger.error("Gemini call failed: %s", exc)
+                with self._usage_lock:
+                    self.usage["failed_calls"] += 1
                 return f"{ERROR_PREFIX}: {exc}"
 
         return f"{ERROR_PREFIX} after {self.MAX_RETRIES} retries: {last_error}"
@@ -224,7 +268,9 @@ class GeminiLLM(BaseLLM):
             "temperature": self.temperature,
             "top_p": self.top_p,
             "max_output_tokens": self.max_tokens,
+            "seed": self.seed,
             "thinking_budget": self.thinking_budget,
+            "thinking_level": self.thinking_level,
         }
         return report
 

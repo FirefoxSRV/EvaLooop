@@ -97,3 +97,7 @@ package.json
 
 # Results
 results/*
+# Anchor-ablation run artifacts
+cache/
+results/
+.evalplus-cache/

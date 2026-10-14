@@ -9,7 +9,12 @@ from .config import EvaluationConfig
 from ..models.factory import ModelFactory
 from ..tasks.factory import TaskFactory
 from ..evaluation.cycle import BatchEvaluationCycle
-from ..evaluation.py_testing import EvalPlusCodeTester, load_mbpp_dataset
+
+# evaloop.evaluation.py_testing imports evalplus, which pulls in the execution
+# machinery for untrusted code. It is imported inside the methods that need it so
+# that a generation-only stage - one that talks to a model API and never runs
+# model output - does not need evalplus installed at all. Same lazy-import
+# convention the package already applies to its CLI and model backends.
 
 
 class EvaLoopEvaluator:
@@ -84,6 +89,8 @@ class EvaLoopEvaluator:
     
     def _load_dataset(self):
         """Load and prepare the dataset."""
+        from ..evaluation.py_testing import load_mbpp_dataset
+
         py_problems, ground_truth = load_mbpp_dataset()
         self.logger.info(f"Loaded MBPP dataset with {len(py_problems)} problems")
         
@@ -100,6 +107,8 @@ class EvaLoopEvaluator:
     
     def _create_tester(self, py_problems):
         """Create the code tester."""
+        from ..evaluation.py_testing import EvalPlusCodeTester, load_mbpp_dataset
+
         _, ground_truth = load_mbpp_dataset()  # Get ground truth
         return EvalPlusCodeTester(py_problems, ground_truth)
     
@@ -242,7 +251,7 @@ class EvaLoopEvaluator:
             ) / len(model_result["prompt_results"])
             model_result["average_successful_cycles"] = avg_cycles
     
-    def _test_python_code(self, output: str, task_id: str, problem: Dict, tester: EvalPlusCodeTester) -> Dict[str, Any]:
+    def _test_python_code(self, output: str, task_id: str, problem: Dict, tester: "EvalPlusCodeTester") -> Dict[str, Any]:
         """Test code output using the EvalPlus tester."""
         try:
             test_results = tester.test_code(

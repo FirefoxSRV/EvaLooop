@@ -101,3 +101,6 @@ results/*
 cache/
 results/
 .evalplus-cache/
+
+# Report build artifact (regenerate with scripts/build_report.py)
+report.html

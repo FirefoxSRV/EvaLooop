@@ -5,7 +5,7 @@ EvaLoop's cross-cycle anchor explicit and swappable, so the contribution of the
 one piece of ground truth that re-enters the loop on every cycle can be measured
 instead of assumed.
 
-> **Public fork:** `<add your fork URL here before submitting>`
+> **Public fork:** <https://github.com/FirefoxSRV/EvaLooop> (branch `anchor-ablation`)
 > **Branch:** `anchor-ablation` · **Upstream base:** `evalooop/EvaLooop@ce22fe2` (branch `dev`)
 > **Patch against upstream:** `evaloop-anchor-ablation.patch`
 > **Upstream's own README** is preserved verbatim as

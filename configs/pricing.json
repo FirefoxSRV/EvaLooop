@@ -1,0 +1,19 @@
+{
+  "_note": [
+    "Per-million-token rates used for the cost table. All runs in this project",
+    "executed on the Gemini API free tier, so the amount actually billed is",
+    "0.00 USD; these rates are only used to report what the same experiment",
+    "would cost at paid rates, which is the figure worth comparing across",
+    "setups. Rates are null until verified against the provider's current",
+    "price list - a made-up number in a cost table is worse than no number.",
+    "Fill in and set 'verified_on' before quoting the counterfactual."
+  ],
+  "currency": "USD",
+  "verified_on": null,
+  "source": null,
+  "models": {
+    "gemma-4-26b-a4b-it":    {"input_per_mtok": null, "output_per_mtok": null, "free_tier": true},
+    "gemma-4-31b-it":        {"input_per_mtok": null, "output_per_mtok": null, "free_tier": true},
+    "gemini-3.5-flash-lite": {"input_per_mtok": null, "output_per_mtok": null, "free_tier": true}
+  }
+}

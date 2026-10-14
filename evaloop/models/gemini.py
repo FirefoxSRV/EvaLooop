@@ -92,6 +92,7 @@ class GeminiLLM(BaseLLM):
         self.usage = {
             "calls": 0, "prompt_tokens": 0, "output_tokens": 0, "thoughts_tokens": 0,
             "retries": 0, "rate_limited": 0, "backoff_seconds": 0.0, "failed_calls": 0,
+            "daily_quota_exhausted": False,
         }
         #: Resolved model version strings seen in responses.
         self.model_versions = set()
@@ -169,6 +170,22 @@ class GeminiLLM(BaseLLM):
                 self.model_versions.add(version)
 
     @staticmethod
+    def _is_daily_quota(exc: Exception) -> bool:
+        """True when a *per-day* quota is exhausted, not a per-minute rate limit.
+
+        The two look alike - both are 429 RESOURCE_EXHAUSTED - but they call for
+        opposite responses. A per-minute limit clears in under a minute and is
+        worth waiting out. A per-day limit (quotaId
+        ``GenerateRequestsPerDayPerProjectPerModel-FreeTier``) clears hours
+        later, so retrying is futile: it burns the retry budget, delays the
+        inevitable abort, and buries the real reason in a wall of identical
+        warnings. Detected on the quota id rather than on the retry delay, so a
+        long per-minute backoff is not mistaken for daily exhaustion.
+        """
+        text = str(exc)
+        return "PerDay" in text or "RequestsPerDay" in text
+
+    @staticmethod
     def _server_retry_delay(exc: Exception) -> Optional[float]:
         """Seconds the server asked us to wait, if it said.
 
@@ -231,6 +248,18 @@ class GeminiLLM(BaseLLM):
 
             except Exception as exc:  # noqa: BLE001 - SDK raises provider-specific types
                 last_error = exc
+                if self._is_daily_quota(exc):
+                    # Waiting cannot help within this run; say so once, clearly.
+                    hint = self._server_retry_delay(exc)
+                    wait = f" Quota resets in about {hint / 3600:.1f}h." if hint else ""
+                    logger.error(
+                        "Daily quota exhausted for %s; not retrying.%s", self.model_id, wait
+                    )
+                    with self._usage_lock:
+                        self.usage["failed_calls"] += 1
+                        self.usage["daily_quota_exhausted"] = True
+                    return (f"{ERROR_PREFIX}: daily quota exhausted for "
+                            f"{self.model_id}.{wait}")
                 if attempt < self.MAX_RETRIES and self._is_retryable(exc):
                     hinted = self._server_retry_delay(exc)
                     if hinted is not None:

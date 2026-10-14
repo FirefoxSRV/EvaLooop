@@ -1,22 +1,22 @@
 "# codebook: C1=summary drops or garbles a requirement (spec loss); C2=summary describes a different but coherent task (semantic drift); C3=summary is faithful, the code does not implement it; C4=signature/anchor failure: wrong name, arity or parameter semantics; C5=extraction or formatting failure (no code block, prose as code, truncation); C6=oracle dependence: survived longer under assert, and the failing code is wrong on the leaked example input; C7=plus-only failure: base tests pass, extended EvalPlus tests do not; C8=harness or other (timeout, exception, unparseable)"
 row_id,failed_at_cycle,base_passed,plus_passed,primary_code,secondary_code,notes
-1,3,False,False,C5,,Extracted code begins with a nested ``` fence and is truncated mid-function; does not parse.
-2,3,False,False,C1,,"Summary says 'power set' but loses the required element ordering, which only the example output stated. Code emits subset+[element], giving ['orange','red'] where ['red','orange'] is expected."
-3,2,False,False,C1,,"Equation f(n)=max(f(n/2)+f(n/3)+f(n/4)+f(n/5), n) garbled into 'sum of its quotients'. Code takes max over a single quotient + recursion instead of the four-way sum."
-4,2,False,False,C2,,'count the number of lists' became 'count the number of list elements': a different operation. Code sums len(item) over sublists.
-5,3,False,False,C1,,"Summary adds 'in place'; code sorts in place and returns None, so the returned value the tests compare is lost."
-6,2,False,False,C2,,Same drift as row 4; code recursively counts non-list leaves rather than sublists.
-7,2,False,False,C2,,'pairs of tuples' read as pairs OF tuples rather than the pair within each tuple. Code multiplies across tuple boundaries.
-8,2,False,False,C1,,Rotation direction lost: summary says 'shifting by index n' without direction. Code rotates right (arr[-n:]+arr[:-n]) where left is required.
-9,2,False,False,C1,,"Same garbled equation as row 3, nested-helper variant."
-10,3,True,False,C7,,"Base tests pass, extended tests fail. Summary kept the direction and the code is correct, but it lost the empty-list guard, so n % len(arr) divides by zero on an empty input."
-11,2,False,False,C1,,Same garbled equation as row 3; additionally confuses itself with a second sum-of-quotients branch.
-12,2,False,False,C1,,"Return container lost: the expected value is a set, stated only by the example. Code returns a list."
-13,2,False,False,C2,,'pairs' read as pairs of tuples; code multiplies first elements across tuples instead of the two elements within a tuple.
-14,2,False,False,C4,,"Parameter order inverted: original takes (m, n), the summary fixes neither order, and the code defines (n, m), so m and n are swapped throughout."
-15,2,False,False,C2,,'remove characters at odd indices' inverted into 'return characters at odd-indexed positions'. Code returns string[1::2] = 'bdf' where 'ace' is required.
-16,3,False,False,C2,,"Pairs misread as in rows 7/13, then compounded: code multiplies per-tuple products together."
-17,2,False,False,C1,,"Summary adds the qualifier 'non-zero digits', which admits numbers containing a 0 (10, 20) that the original rule excludes."
-18,3,False,False,C1,,Same ordering loss as row 2.
-19,2,False,False,C4,,"Same (n, m) inversion as row 14; the function also ends in a bare return, yielding None."
-20,2,False,False,C2,,Same odd/even inversion as row 15.
+1,3,False,False,,,
+2,3,False,False,,,
+3,2,False,False,,,
+4,2,False,False,,,
+5,3,False,False,,,
+6,2,False,False,,,
+7,2,False,False,,,
+8,2,False,False,,,
+9,2,False,False,,,
+10,3,True,False,,,
+11,2,False,False,,,
+12,2,False,False,,,
+13,2,False,False,,,
+14,2,False,False,,,
+15,2,False,False,,,
+16,3,False,False,,,
+17,2,False,False,,,
+18,3,False,False,,,
+19,2,False,False,,,
+20,2,False,False,,,

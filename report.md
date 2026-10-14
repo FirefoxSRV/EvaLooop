@@ -37,7 +37,9 @@ Two models, `gemma-4-26b-a4b-it` and `gemma-4-31b-it`, via the Gemini API. The G
 
 Untrusted code is executed only inside a container with `--network none`, a non-root user, dropped capabilities, a read-only repo mount and memory/CPU/pid caps; the test image holds no model SDK and no API key. The container is required rather than advisory: EvalPlus's `reliability_guard` sets `RLIMIT_AS`, which macOS rejects.
 
-**Cost.** All runs were on the free tier: **$0.00 billed**. Measured usage for one model's full three-arm ablation: **760 API calls**, 122,466 tokens (72,725 in / 49,741 out), with 5,818 calls served from cache — i.e. **88.4% of all calls were byte-identical repeats**. That is ~5 calls and ~816 tokens per task-arm. No LLM was used as a judge or classifier for the results reported here; `scripts/judge_similarity.py` implements the boundary-similarity judge, reusing the framework's byte-identical prompt from the data package, and records in every run file that absolute scores would not be comparable to the published `gpt-4-turbo-2024-04-09` ones.
+**Cost.** All runs were on the free tier: **$0.00 billed**. Measured usage for one model's full three-arm ablation: **760 API calls**, 122,466 tokens (72,725 in / 49,741 out), with 5,818 calls served from cache — i.e. **88.4% of all calls were byte-identical repeats**. That is ~5 calls and ~816 tokens per task-arm.
+
+**LLM use beyond the models under evaluation.** The boundary-similarity judge (`scripts/judge_similarity.py`) reuses the framework's byte-identical prompt from the data package but was **not** run, so no reported number depends on it; had it been, its scores would not be comparable to the published `gpt-4-turbo-2024-04-09` ones. One further use is disclosed: an LLM (Claude Opus 4, via Claude Code) performed an **independent second pass** over the same 20 failures, reading the same four artifacts per failure with the arm label withheld, and emitting one code per failure from the same codebook; its judgements were sealed before the primary coding began (`analysis/coder_llm_sealed.json`) and are used **only** to report inter-rater agreement. The primary coding is my own. Cost: the second pass ran inside an assistant session with no separately metered per-example charge.
 
 ## 4. Results and failure analysis
 
@@ -57,15 +59,15 @@ ASL falls monotonically and mid-loop failures triple. The A0→A2 difference is 
 
 **The loop reaches a fixed point almost immediately.** 108 of the 110 tasks that get past cycle 1 reach a *repeated* (code, summary) state, at median **cycle 2** under A0 and cycle 3 under A2 — the model regenerates identical code, which yields an identical summary, indefinitely. This is what the 88.4% cache-hit rate is measuring. So cycles 4–10 re-derive a fixed point while ASL's i² weighting pays quadratic credit for them, and weakening the anchor measurably *delays* convergence.
 
-**Manual inspection.** I coded 20 mid-loop failures blind — the sampler shuffles rows and withholds arm labels in a separate key file, because knowing a failure came from an ablated arm would make it trivial to code it as oracle dependence. C6 was therefore not coded but *derived* after unblinding.
+**Manual inspection.** 20 mid-loop failures were coded blind against the pre-registered codebook: the sampler shuffles rows and withholds arm labels in a separate key file, because knowing a failure came from an ablated arm would make it trivial to code as oracle dependence. C6 was therefore not coded but *derived* afterwards from the run data.
 
-| arm | C1 detail loss | C2 operation drift | C4 signature | C5 extraction | C7 plus-only | n |
-|---|---|---|---|---|---|---|
-| A0 `assert` | 1 | 0 | 1 | 1 | 1 | 4 |
-| A1 `masked_assert` | 4 | 3 | 1 | 0 | 0 | 8 |
-| A2 `signature` | 4 | 4 | 0 | 0 | 0 | 8 |
+<!-- CODING PENDING: fill from analysis/coding_summary.json once the primary
+     coding in analysis/failures_to_code.csv is complete. Insert the by-arm
+     distribution table and the kappa against the sealed second coder. -->
 
-The modes differ sharply. Baseline failures are mechanical and idiosyncratic: one nested-code-fence truncation, one `(m, n)` parameter inversion, one extended-test edge case, one garbled recursion. Ablated failures are **almost entirely specification degradation** (8/8 and 8/8 in C1+C2). **11 of the 20 sampled failures are oracle-dependent** — the same task sustained strictly longer under A0 — and 8 of those went from surviving all ten cycles to failing at cycle 1.
+**[Primary coding in progress — by-arm distribution and inter-rater agreement to be inserted.]**
+
+Independent of how the mechanisms are coded, the cross-arm arithmetic is fixed: **11 of the 20 sampled failures are oracle-dependent** — the same task sustained strictly longer under A0 — and **8 of those went from surviving all ten cycles to failing at cycle 1**. That count is derived from sustained-cycle data, not from a judgement call.
 
 Reading the cases, the example was doing *disambiguation* rather than providing an answer to copy: it resolved element ordering (Mbpp/462), the return container (set vs list, Mbpp/473), rotation direction (Mbpp/586), whether "pairs of tuples" means pairs *of* tuples or the pair *within* one (Mbpp/120, Mbpp/409), and the treatment of zero digits (Mbpp/745). This model **never echoes the assert (0.0% of cycles)**, so the leak cannot be a copyable crutch — refuting my pre-registered H5 and replacing it with a better account.
 

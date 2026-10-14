@@ -1,0 +1,89 @@
+{
+  "coder": "claude-opus-4 (Claude Code), acting as a second coder",
+  "role": "Independent second pass for inter-rater reliability. NOT the primary coding.",
+  "blind": true,
+  "note": "Do not open until the primary coding in failures_to_code.csv is complete.",
+  "method": "Each failure was read as: original task, the summary fed to the failing cycle, the last passing code, and the failing code, with the arm label withheld. C6 was not assigned - it needs cross-arm information - and is derived separately.",
+  "codes": {
+    "1": {
+      "primary_code": "C5",
+      "rationale": "Extracted code begins with a nested ``` fence and is truncated mid-function; does not parse."
+    },
+    "2": {
+      "primary_code": "C1",
+      "rationale": "Summary says 'power set' but loses the required element ordering, which only the example output stated. Code emits subset+[element], giving ['orange','red'] where ['red','orange'] is expected."
+    },
+    "3": {
+      "primary_code": "C1",
+      "rationale": "Equation f(n)=max(f(n/2)+f(n/3)+f(n/4)+f(n/5), n) garbled into 'sum of its quotients'. Code takes max over a single quotient + recursion instead of the four-way sum."
+    },
+    "4": {
+      "primary_code": "C2",
+      "rationale": "'count the number of lists' became 'count the number of list elements': a different operation. Code sums len(item) over sublists."
+    },
+    "5": {
+      "primary_code": "C1",
+      "rationale": "Summary adds 'in place'; code sorts in place and returns None, so the returned value the tests compare is lost."
+    },
+    "6": {
+      "primary_code": "C2",
+      "rationale": "Same drift as row 4; code recursively counts non-list leaves rather than sublists."
+    },
+    "7": {
+      "primary_code": "C2",
+      "rationale": "'pairs of tuples' read as pairs OF tuples rather than the pair within each tuple. Code multiplies across tuple boundaries."
+    },
+    "8": {
+      "primary_code": "C1",
+      "rationale": "Rotation direction lost: summary says 'shifting by index n' without direction. Code rotates right (arr[-n:]+arr[:-n]) where left is required."
+    },
+    "9": {
+      "primary_code": "C1",
+      "rationale": "Same garbled equation as row 3, nested-helper variant."
+    },
+    "10": {
+      "primary_code": "C7",
+      "rationale": "Base tests pass, extended tests fail. Summary kept the direction and the code is correct, but it lost the empty-list guard, so n % len(arr) divides by zero on an empty input."
+    },
+    "11": {
+      "primary_code": "C1",
+      "rationale": "Same garbled equation as row 3; additionally confuses itself with a second sum-of-quotients branch."
+    },
+    "12": {
+      "primary_code": "C1",
+      "rationale": "Return container lost: the expected value is a set, stated only by the example. Code returns a list."
+    },
+    "13": {
+      "primary_code": "C2",
+      "rationale": "'pairs' read as pairs of tuples; code multiplies first elements across tuples instead of the two elements within a tuple."
+    },
+    "14": {
+      "primary_code": "C4",
+      "rationale": "Parameter order inverted: original takes (m, n), the summary fixes neither order, and the code defines (n, m), so m and n are swapped throughout."
+    },
+    "15": {
+      "primary_code": "C2",
+      "rationale": "'remove characters at odd indices' inverted into 'return characters at odd-indexed positions'. Code returns string[1::2] = 'bdf' where 'ace' is required."
+    },
+    "16": {
+      "primary_code": "C2",
+      "rationale": "Pairs misread as in rows 7/13, then compounded: code multiplies per-tuple products together."
+    },
+    "17": {
+      "primary_code": "C1",
+      "rationale": "Summary adds the qualifier 'non-zero digits', which admits numbers containing a 0 (10, 20) that the original rule excludes."
+    },
+    "18": {
+      "primary_code": "C1",
+      "rationale": "Same ordering loss as row 2."
+    },
+    "19": {
+      "primary_code": "C4",
+      "rationale": "Same (n, m) inversion as row 14; the function also ends in a bare return, yielding None."
+    },
+    "20": {
+      "primary_code": "C2",
+      "rationale": "Same odd/even inversion as row 15."
+    }
+  }
+}

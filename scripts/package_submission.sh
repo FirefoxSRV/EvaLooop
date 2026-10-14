@@ -56,10 +56,21 @@ for f in results/*__*.json; do
   cp "$f" "$STAGE/results/"; runs=$((runs + 1))
 done
 [ "$runs" -gt 0 ] && note "$runs run file(s)" || warn "no run files in results/"
-for f in results/summary.csv results/metrics.csv results/stats.json results/tester_validation.json; do
+for f in results/summary.csv results/metrics.csv results/stats.json \
+         results/cost.json results/tester_validation.json; do
   [ -f "$f" ] && { cp "$f" "$STAGE/results/"; note "$(basename "$f")"; } \
                || warn "missing $(basename "$f")"
 done
+
+# The same runs in the framework's native shape, which the deliverables ask for
+# alongside the package-schema files the analysis reads.
+if [ -d results/native ]; then
+  mkdir -p "$STAGE/results/native"
+  cp results/native/*.json "$STAGE/results/native/" 2>/dev/null
+  note "$(ls -1 results/native/*.json 2>/dev/null | wc -l | tr -d " ") native-shape run file(s)"
+else
+  warn "results/native missing (run scripts/emit_native_results.py --verify)"
+fi
 
 if [ -d analysis ]; then
   mkdir -p "$STAGE/analysis"
@@ -71,7 +82,7 @@ fi
 
 echo "==> Checking summary.csv"
 if [ -f results/summary.csv ]; then
-  header="$(head -1 results/summary.csv)"
+  header="$(head -1 results/summary.csv | tr -d "\r")"
   if [ "$header" = "$EXPECTED_HEADER" ]; then
     note "header exact"
   else
@@ -93,13 +104,18 @@ grep -q "add your fork URL here" "$STAGE/README.md" 2>/dev/null \
   && warn "README still has the fork-URL placeholder" \
   || note "fork URL filled in"
 
-rm -f "$ZIP"
-(cd "$STAGE" && zip -qr "$OLDPWD/$ZIP" .)
+# Resolve before descending into the staging dir, so an absolute --output works.
+case "$ZIP" in
+  /*) ZIP_ABS="$ZIP" ;;
+  *)  ZIP_ABS="$PWD/$ZIP" ;;
+esac
+rm -f "$ZIP_ABS"
+(cd "$STAGE" && zip -qr "$ZIP_ABS" .)
 rm -rf "$STAGE"
 
 echo
-echo "==> $ZIP"
-unzip -l "$ZIP" | tail -n +4 | head -40
+echo "==> $ZIP_ABS"
+unzip -l "$ZIP_ABS" | tail -n +4 | head -40
 if [ "$problems" -gt 0 ]; then
   echo
   echo "$problems item(s) need attention before submitting."

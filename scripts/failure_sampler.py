@@ -147,7 +147,7 @@ def main() -> int:
     # Unlabelled CSV for coding.
     csv_path = out_dir / "failures_to_code.csv"
     with csv_path.open("w", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow([f"# codebook: " + "; ".join(f"{k}={v}" for k, v in CODEBOOK.items())])
         writer.writerow(["row_id", "failed_at_cycle", "base_passed", "plus_passed",
                          "primary_code", "secondary_code", "notes"])

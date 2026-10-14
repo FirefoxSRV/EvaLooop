@@ -116,7 +116,7 @@ def main() -> int:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["model", "configuration", "n_tasks", "success_rate", "asl_score"])
         for row in rows:
             writer.writerow([row["model"], row["configuration"], row["n_tasks"],
@@ -130,7 +130,8 @@ def main() -> int:
                    "survived_all", "mid_failures", "failed_at_1",
                    "assert_echo_rate", "total_cycles_run", "wall_seconds", "api_calls"]
         with full_out.open("w", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer = csv.DictWriter(handle, fieldnames=columns,
+                                    extrasaction="ignore", lineterminator="\n")
             writer.writeheader()
             for row in rows:
                 writer.writerow(row)

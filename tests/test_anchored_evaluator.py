@@ -194,3 +194,40 @@ class TestGuards:
     def test_a_task_missing_from_the_metadata_is_rejected_up_front(self, tmp_path):
         with pytest.raises(ValueError, match="absent from the dataset metadata"):
             build("assert", task_ids=[TASK_ID, "Mbpp/9999"], tmp_path=tmp_path)
+
+
+class TestGenerationFailureGuard:
+    """A failed API call must never be scored as a model loop failure."""
+
+    def test_an_api_error_string_aborts_instead_of_being_tested(self, tmp_path):
+        from evaloop.evaluation.anchored_evaluator import GenerationFailure
+        from evaloop.models.gemini import ERROR_PREFIX
+
+        class ThrottledModel(ScriptedModel):
+            def generate(self, prompt, **kwargs):
+                self.prompts.append(prompt)
+                if prompt.startswith("Generate Python code"):
+                    return f"{ERROR_PREFIX}: 429 RESOURCE_EXHAUSTED"
+                return self.summary
+
+        tester = ScriptedTester(pass_cycles=99)
+        evaluator = build("assert", model=ThrottledModel(), tester=tester, tmp_path=tmp_path)
+        with pytest.raises(GenerationFailure, match="exhausting retries"):
+            evaluator.run("scripted")
+        # The point: the error string never reached the tester.
+        assert tester.calls == 0
+
+    def test_the_abort_message_says_how_to_resume(self, tmp_path):
+        from evaloop.evaluation.anchored_evaluator import GenerationFailure
+        from evaloop.models.gemini import ERROR_PREFIX
+
+        class ThrottledModel(ScriptedModel):
+            def generate(self, prompt, **kwargs):
+                self.prompts.append(prompt)
+                return (f"{ERROR_PREFIX}: quota"
+                        if prompt.startswith("Generate Python code") else self.summary)
+
+        with pytest.raises(GenerationFailure) as excinfo:
+            build("assert", model=ThrottledModel(), tmp_path=tmp_path).run("scripted")
+        assert "cache will resume" in str(excinfo.value)
+        assert "NOT written" in str(excinfo.value)

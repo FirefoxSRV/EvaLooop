@@ -21,8 +21,22 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from ..core.evaluator import EvaLoopEvaluator
+from ..models.gemini import ERROR_PREFIX
 
 logger = logging.getLogger(__name__)
+
+
+class GenerationFailure(RuntimeError):
+    """Raised when a model call could not be completed at all.
+
+    This exists to protect the experiment's validity. A call that exhausts its
+    retry budget - almost always sustained throttling - returns an error string
+    rather than code. If that string were simply fed to the tester it would fail
+    the tests and be recorded as the model failing to sustain the loop, which
+    would bias ASL downward for reasons that have nothing to do with the model
+    or the anchor. So the run aborts instead. Every successful call is already
+    cached, so re-running resumes where it stopped and costs nothing.
+    """
 
 GENERATION_PROMPT = (
     "Generate Python code for the following task: \n{description}\n"
@@ -119,6 +133,17 @@ class AnchoredEvaluator(EvaLoopEvaluator):
             raise RuntimeError("No task in the loop produces testable code")
         code_key = self.TASK_OUTPUT_KEY_TEMPLATE.format(code_index + 1)
         summary_key = self.TASK_OUTPUT_KEY_TEMPLATE.format(len(tasks))
+
+        # Refuse to test an API error string as if it were a candidate solution.
+        broken = [r["task_id"] for r in results
+                  if code_key in r and r[code_key].startswith(ERROR_PREFIX)]
+        if broken:
+            raise GenerationFailure(
+                f"Cycle {current_cycle}: {len(broken)} generation(s) failed after "
+                f"exhausting retries (first: {broken[0]}). Results were NOT written. "
+                "This is normally sustained quota throttling; re-run the same command "
+                "and the call cache will resume from here."
+            )
 
         candidates = [(r["task_id"], r[code_key]) for r in results if code_key in r]
         self.cycle_sizes.append(len(candidates))

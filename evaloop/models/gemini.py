@@ -40,6 +40,7 @@ changes the output distribution and the cost, so a run should always pin it.
 import logging
 import os
 import random
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -57,9 +58,12 @@ class GeminiLLM(BaseLLM):
     """Implementation for Google Gemini models."""
 
     DEFAULT_MODEL_ID = "gemini-2.0-flash-lite"
-    MAX_RETRIES = 8
+    # Throttling is the steady state on a quota-limited key, so the budget is
+    # generous: exhausting it aborts the run (see AnchoredEvaluator) rather
+    # than recording a throttle as a model failure.
+    MAX_RETRIES = 24
     BASE_RETRY_DELAY = 2.0
-    MAX_RETRY_DELAY = 60.0
+    MAX_RETRY_DELAY = 90.0
 
     def __init__(self, model_config: Dict[str, Any]):
         super().__init__(model_config)
@@ -165,6 +169,19 @@ class GeminiLLM(BaseLLM):
                 self.model_versions.add(version)
 
     @staticmethod
+    def _server_retry_delay(exc: Exception) -> Optional[float]:
+        """Seconds the server asked us to wait, if it said.
+
+        Quota errors carry a RetryInfo hint such as ``'retryDelay': '59s'``.
+        Sleeping less than that guarantees another 429 and burns a retry, so the
+        hint is preferred over any locally computed backoff.
+        """
+        match = re.search(r"retryDelay['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s", str(exc))
+        if not match:
+            return None
+        return float(match.group(1))
+
+    @staticmethod
     def _is_rate_limit(exc: Exception) -> bool:
         """True when the provider is throttling, as opposed to failing."""
         text = str(exc).lower()
@@ -215,8 +232,14 @@ class GeminiLLM(BaseLLM):
             except Exception as exc:  # noqa: BLE001 - SDK raises provider-specific types
                 last_error = exc
                 if attempt < self.MAX_RETRIES and self._is_retryable(exc):
-                    delay = min(self.BASE_RETRY_DELAY * 2 ** attempt, self.MAX_RETRY_DELAY)
-                    delay *= 0.5 + random.random()  # jitter, to decorrelate workers
+                    hinted = self._server_retry_delay(exc)
+                    if hinted is not None:
+                        # Trust the server, plus a little jitter so the workers
+                        # released by one quota window do not all fire at once.
+                        delay = min(hinted, self.MAX_RETRY_DELAY) + random.random() * 2.0
+                    else:
+                        delay = min(self.BASE_RETRY_DELAY * 2 ** attempt, self.MAX_RETRY_DELAY)
+                        delay *= 0.5 + random.random()
                     throttled = self._is_rate_limit(exc)
                     with self._usage_lock:
                         self.usage["retries"] += 1

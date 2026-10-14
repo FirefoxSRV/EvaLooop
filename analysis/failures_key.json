@@ -1,0 +1,146 @@
+{
+  "seed": 20251013,
+  "note": "Do not open until coding is complete; the arm label is the thing being tested.",
+  "rows": {
+    "1": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "assert",
+      "task_id": "Mbpp/462",
+      "failed_at_cycle": 3,
+      "boundary_similarity": null
+    },
+    "2": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/462",
+      "failed_at_cycle": 3,
+      "boundary_similarity": null
+    },
+    "3": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "assert",
+      "task_id": "Mbpp/392",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "4": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/792",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "5": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/104",
+      "failed_at_cycle": 3,
+      "boundary_similarity": null
+    },
+    "6": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/792",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "7": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/120",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "8": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/586",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "9": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/392",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "10": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "assert",
+      "task_id": "Mbpp/586",
+      "failed_at_cycle": 3,
+      "boundary_similarity": null
+    },
+    "11": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/392",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "12": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/473",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "13": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/409",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "14": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/239",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "15": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/226",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "16": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/120",
+      "failed_at_cycle": 3,
+      "boundary_similarity": null
+    },
+    "17": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/745",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "18": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/462",
+      "failed_at_cycle": 3,
+      "boundary_similarity": null
+    },
+    "19": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "assert",
+      "task_id": "Mbpp/239",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    },
+    "20": {
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/226",
+      "failed_at_cycle": 2,
+      "boundary_similarity": null
+    }
+  }
+}

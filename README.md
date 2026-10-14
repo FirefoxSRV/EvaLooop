@@ -183,11 +183,40 @@ export GEMINI_API_KEY="..."  # or pass --use-vertex for Vertex AI
 ### Analysis
 
 ```bash
-.venv-gen/bin/python scripts/summarize_runs.py --results-dir results --full  # summary.csv + metrics.csv
-.venv-gen/bin/python scripts/stats.py --results-dir results                  # paired CIs, Wilcoxon
-.venv-gen/bin/python scripts/judge_similarity.py --results-dir results       # boundary similarity
-.venv-gen/bin/python scripts/failure_sampler.py --results-dir results --per-arm 10
+P=.venv-gen/bin/python
+
+$P scripts/summarize_runs.py --results-dir results --full   # summary.csv + metrics.csv
+$P scripts/stats.py --results-dir results                   # paired CIs, Wilcoxon, model spread
+$P scripts/emit_native_results.py --results-dir results --verify
+#   also writes each run in the framework's native shape and checks it through
+#   the framework's own ResultAnalyzer
+
+$P scripts/cost_report.py --results-dir results             # usage, per-task cost
+$P scripts/failure_sampler.py --results-dir results --per-arm 8
+#   -> analysis/failures_to_code.csv (code these BEFORE opening failures_key.json)
+
+$P scripts/judge_similarity.py --results-dir results --dry-run
+#   boundary similarity; needs API access, so it is optional and not used for
+#   any number in the report
+
+$P scripts/build_report.py                                  # report.md -> report.pdf
+./scripts/package_submission.sh submission.zip              # assemble + checklist
 ```
+
+### Which command produces which reported number
+
+| Number in the report | Command |
+|---|---|
+| ρ(pass@1, ASL) = 0.945, 91% survival, 33.4% echo | `validate_anchors_on_package.py` |
+| 165,630 transitions reproduced | `validate_anchors_on_package.py` |
+| 56/60 leaderboard models reproduced | `validate_leaderboard.py` |
+| 117/120 tester agreement, 0/40 stripping changes | `retest_package_code.py --n 120` |
+| Subset fidelity ρ = 0.937 | `sample_tasks.py` |
+| Entry points 367/378 confirmed | `export_dataset_meta.py --source package` |
+| ASL / pass@1 / mid-failure table | `summarize_runs.py --full` |
+| ΔASL, CIs, Wilcoxon | `stats.py` |
+| 88.4% cache hits, 760 calls, token counts | `cost_report.py` |
+| Failure coding, 11/20 oracle-dependent | `failure_sampler.py` then `analysis/coding_summary.json` |
 
 ## 5. Models and settings
 

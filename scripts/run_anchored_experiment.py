@@ -115,7 +115,12 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20251013)
     parser.add_argument("--thinking-level", help="Gemini 3.x: minimal|low|medium|high")
     parser.add_argument("--thinking-budget", type=int, help="Gemini 2.x: 0 disables thinking")
-    parser.add_argument("--concurrency", type=int, default=8)
+    parser.add_argument("--concurrency", type=int, default=8,
+                        help="Parallel in-flight requests. Raising this past the "
+                             "provider's requests-per-minute cap only adds retries.")
+    parser.add_argument("--use-vertex", action="store_true",
+                        help="Authenticate to Vertex AI with application default "
+                             "credentials instead of using GEMINI_API_KEY")
 
     parser.add_argument("--tester", choices=["docker", "local"], default="docker")
     parser.add_argument("--image", default="evaloop-test:latest")

@@ -1,0 +1,37 @@
+# Test stage: executes untrusted model output against the MBPP+ suites.
+#
+# This image is required, not merely advisable:
+#   * Safety - generated code is untrusted; it runs here with no network, as a
+#     non-root user, with dropped capabilities and memory/CPU/pid caps (see
+#     evaloop/evaluation/sandbox_tester.py for the run flags).
+#   * Correctness - EvalPlus's reliability_guard sets RLIMIT_AS, which fails on
+#     macOS with "current limit exceeds maximum limit", so the suites cannot run
+#     natively on a Mac host at all.
+#
+# Build (from the repo root):
+#   docker build -f docker/Dockerfile.test -t evaloop-test:latest .
+FROM python:3.11-slim
+
+# evalplus needs a compiler for some of its scientific dependencies.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+# Only the testing dependency: this image never talks to a model API, so it
+# carries no SDK and is given no API key.
+RUN pip install --no-cache-dir "evalplus>=0.2.0"
+
+# Dataset and ground-truth cache, bind-mounted from the host so the 378-task
+# oracle is computed once overall rather than once per container launch.
+ENV EVALPLUS_CACHE_DIR=/cache \
+    HOME=/tmp \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+RUN mkdir -p /cache && chmod 777 /cache
+
+# The repo is bind-mounted read-only at /app at run time; nothing is copied in,
+# so the image does not need rebuilding when the code changes.
+WORKDIR /app
+
+ENTRYPOINT []
+CMD ["python", "scripts/test_worker.py"]

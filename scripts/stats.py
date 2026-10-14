@@ -192,9 +192,24 @@ def main() -> int:
             })
 
     # Across models: does an arm reorder them, and does it spread them out?
+    #
+    # Restricted to the models that ran *every* arm. Comparing a spread computed
+    # over three models against one computed over two would make an arm look
+    # more or less discriminative purely because a model is missing from it,
+    # which is an artefact of what finished running, not a property of the arm.
+    complete = [m for m in models if all((m, a) in runs for a in ARM_ORDER)]
+    partial = [m for m in models if m not in complete]
     print("=== Across models ===\n")
+    if partial:
+        print(f"Restricted to models with all {len(ARM_ORDER)} arms: "
+              f"{', '.join(complete) or '(none)'}")
+        print(f"Excluded from arm-to-arm spread comparisons (incomplete): "
+              f"{', '.join(partial)}\n")
+    report["across_models"]["_complete_models"] = complete
+    report["across_models"]["_partial_models"] = partial
+
     for arm in ARM_ORDER:
-        present = [m for m in models if (m, arm) in runs]
+        present = [m for m in complete if (m, arm) in runs]
         if len(present) < 2:
             continue
         asl = [asl_pow(list(runs[(m, arm)].values()), max_cycles) for m in present]
@@ -214,12 +229,19 @@ def main() -> int:
         if arm != BASELINE and all((m, BASELINE) in runs for m in present):
             base_asl = [asl_pow(list(runs[(m, BASELINE)].values()), max_cycles)
                         for m in present]
-            rho = spearman(base_asl, asl)
             base_ranking = [m for _, m in sorted(zip(base_asl, present), reverse=True)]
-            print(f"  vs {BASELINE}: Spearman rho={rho:.3f}  "
-                  f"{'same order' if ranking == base_ranking else 'REORDERED'}")
-            report["across_models"][arm]["spearman_vs_baseline"] = rho
-            report["across_models"][arm]["reordered"] = ranking != base_ranking
+            reordered = ranking != base_ranking
+            report["across_models"][arm]["reordered"] = reordered
+            # A rank correlation over two models can only be +1 or -1; reporting
+            # it as a statistic would dress up a coin flip.
+            if len(present) >= 3:
+                rho = spearman(base_asl, asl)
+                print(f"  vs {BASELINE}: Spearman rho={rho:.3f}  "
+                      f"{'REORDERED' if reordered else 'same order'}")
+                report["across_models"][arm]["spearman_vs_baseline"] = rho
+            else:
+                print(f"  vs {BASELINE}: {'REORDERED' if reordered else 'same order'}  "
+                      f"(n={len(present)} models; rank correlation not meaningful)")
         print()
 
     out = Path(args.out)

@@ -193,23 +193,21 @@ def main() -> int:
 
     # Across models: does an arm reorder them, and does it spread them out?
     #
-    # Restricted to the models that ran *every* arm. Comparing a spread computed
-    # over three models against one computed over two would make an arm look
-    # more or less discriminative purely because a model is missing from it,
-    # which is an artefact of what finished running, not a property of the arm.
-    complete = [m for m in models if all((m, a) in runs for a in ARM_ORDER)]
-    partial = [m for m in models if m not in complete]
+    # The model set is chosen per comparison, not globally: an arm is compared
+    # against the baseline over the models that ran *both* of those two arms.
+    # Requiring every model to have run every arm would drop a model from a
+    # comparison it actually supports, and comparing a spread over three models
+    # against one over two would make an arm look more or less discriminative
+    # purely because of which runs finished.
     print("=== Across models ===\n")
-    if partial:
-        print(f"Restricted to models with all {len(ARM_ORDER)} arms: "
-              f"{', '.join(complete) or '(none)'}")
-        print(f"Excluded from arm-to-arm spread comparisons (incomplete): "
-              f"{', '.join(partial)}\n")
-    report["across_models"]["_complete_models"] = complete
-    report["across_models"]["_partial_models"] = partial
+    print("Each arm is compared with the baseline over the models that ran both.\n")
 
     for arm in ARM_ORDER:
-        present = [m for m in complete if (m, arm) in runs]
+        if arm == BASELINE:
+            present = [m for m in models if (m, arm) in runs]
+        else:
+            present = [m for m in models
+                       if (m, arm) in runs and (m, BASELINE) in runs]
         if len(present) < 2:
             continue
         asl = [asl_pow(list(runs[(m, arm)].values()), max_cycles) for m in present]
@@ -217,7 +215,7 @@ def main() -> int:
         ranking = [m for _, m in sorted(zip(asl, present), reverse=True)]
         spread = statistics.pstdev(bias) if len(bias) > 1 else 0.0
 
-        print(f"{arm}")
+        print(f"{arm}  (n={len(present)} models)")
         print(f"  ASL        {', '.join(f'{m}={a:.3f}' for m, a in zip(present, asl))}")
         print(f"  ranking    {' > '.join(ranking)}")
         print(f"  sd(ASL_bias) {spread:.4f}")

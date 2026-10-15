@@ -1,0 +1,124 @@
+{
+  "n_coded": 20,
+  "by_arm": {
+    "assert": {
+      "C5": 1,
+      "C1": 1,
+      "C7": 1,
+      "C4": 1
+    },
+    "masked_assert": {
+      "C1": 4,
+      "C2": 3,
+      "C4": 1
+    },
+    "signature": {
+      "C1": 4,
+      "C2": 4
+    }
+  },
+  "oracle_dependent": [
+    {
+      "row": "4",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/792",
+      "mechanism": "C2",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    },
+    {
+      "row": "5",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/104",
+      "mechanism": "C1",
+      "sustained_assert": 10,
+      "sustained_here": 2
+    },
+    {
+      "row": "6",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/792",
+      "mechanism": "C2",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    },
+    {
+      "row": "7",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/120",
+      "mechanism": "C2",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    },
+    {
+      "row": "8",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/586",
+      "mechanism": "C1",
+      "sustained_assert": 2,
+      "sustained_here": 1
+    },
+    {
+      "row": "12",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/473",
+      "mechanism": "C1",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    },
+    {
+      "row": "13",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/409",
+      "mechanism": "C2",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    },
+    {
+      "row": "15",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/226",
+      "mechanism": "C2",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    },
+    {
+      "row": "16",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/120",
+      "mechanism": "C2",
+      "sustained_assert": 10,
+      "sustained_here": 2
+    },
+    {
+      "row": "17",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "masked_assert",
+      "task_id": "Mbpp/745",
+      "mechanism": "C1",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    },
+    {
+      "row": "20",
+      "model": "gemma-4-26b-a4b-it",
+      "arm": "signature",
+      "task_id": "Mbpp/226",
+      "mechanism": "C2",
+      "sustained_assert": 10,
+      "sustained_here": 1
+    }
+  ],
+  "oracle_dependent_count": 11,
+  "collapsed_from_ten": 10,
+  "second_coder_agreement": null
+}

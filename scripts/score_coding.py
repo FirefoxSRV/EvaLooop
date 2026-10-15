@@ -45,6 +45,8 @@ def main() -> int:
     parser.add_argument("--key", default="analysis/failures_key.json")
     parser.add_argument("--sealed", default="analysis/coder_llm_sealed.json")
     parser.add_argument("--out", default="analysis/coding_summary.json")
+    parser.add_argument("--no-agreement", action="store_true",
+                        help="Skip the second-coder comparison (use when the\n                              primary coding and the sealed pass are the same work)")
     args = parser.parse_args()
 
     rows = list(csv.reader(Path(args.coding).open()))
@@ -101,29 +103,37 @@ def main() -> int:
 
     agreement = None
     sealed_path = Path(args.sealed)
-    if sealed_path.exists():
-        sealed = json.loads(sealed_path.read_text())
-        theirs = sealed["codes"]
-        shared = sorted(set(coded) & set(theirs), key=int)
-        mine = [coded[r] for r in shared]
-        llm = [theirs[r]["primary_code"] for r in shared]
-        exact = sum(1 for x, y in zip(mine, llm) if x == y)
-        kappa = cohens_kappa(mine, llm)
-        agreement = {"n": len(shared), "exact": exact,
-                     "percent": round(100 * exact / len(shared), 1),
-                     "cohens_kappa": round(kappa, 3),
-                     "second_coder": sealed.get("coder")}
-        print(f"\n=== agreement with the sealed second coder ===")
-        print(f"  second coder : {sealed.get('coder')}")
-        print(f"  exact        : {exact}/{len(shared)} ({agreement['percent']}%)")
-        print(f"  Cohen's kappa: {kappa:.3f}")
-        disagreements = [(r, coded[r], theirs[r]["primary_code"]) for r in shared
-                         if coded[r] != theirs[r]["primary_code"]]
-        if disagreements:
-            print(f"  disagreements ({len(disagreements)}):")
-            for row_id, a, b in disagreements:
-                print(f"    row {row_id:>2}: primary={a}  second={b}  "
-                      f"[{key[row_id]['arm']}, {key[row_id]['task_id']}]")
+    if args.no_agreement:
+        print("\n(agreement against a second coder not computed: --no-agreement)")
+    elif sealed_path.exists():
+        try:
+            sealed = json.loads(sealed_path.read_text())
+            theirs = sealed["codes"]
+        except (json.JSONDecodeError, KeyError) as exc:
+            print(f"\nSkipping agreement: {sealed_path} is not a readable "
+                  f"second-coder file ({exc}).")
+            theirs = None
+        if theirs is not None:
+            shared = sorted(set(coded) & set(theirs), key=int)
+            mine = [coded[r] for r in shared]
+            llm = [theirs[r]["primary_code"] for r in shared]
+            exact = sum(1 for x, y in zip(mine, llm) if x == y)
+            kappa = cohens_kappa(mine, llm)
+            agreement = {"n": len(shared), "exact": exact,
+                         "percent": round(100 * exact / len(shared), 1),
+                         "cohens_kappa": round(kappa, 3),
+                         "second_coder": sealed.get("coder")}
+            print(f"\n=== agreement with the sealed second coder ===")
+            print(f"  second coder : {sealed.get('coder')}")
+            print(f"  exact        : {exact}/{len(shared)} ({agreement['percent']}%)")
+            print(f"  Cohen's kappa: {kappa:.3f}")
+            disagreements = [(r, coded[r], theirs[r]["primary_code"]) for r in shared
+                             if coded[r] != theirs[r]["primary_code"]]
+            if disagreements:
+                print(f"  disagreements ({len(disagreements)}):")
+                for row_id, a, b in disagreements:
+                    print(f"    row {row_id:>2}: primary={a}  second={b}  "
+                          f"[{key[row_id]['arm']}, {key[row_id]['task_id']}]")
 
     Path(args.out).write_text(json.dumps({
         "n_coded": len(coded),

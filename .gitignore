@@ -104,3 +104,6 @@ results/
 
 # Report build artifact (regenerate with scripts/build_report.py)
 report.html
+
+# Superseded 150-task run, kept for comparison
+results_150task_backup/

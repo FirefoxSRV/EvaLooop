@@ -101,7 +101,11 @@ class GeminiLLM(BaseLLM):
     # Throttling is the steady state on a quota-limited key, so the budget is
     # generous: exhausting it aborts the run (see AnchoredEvaluator) rather
     # than recording a throttle as a model failure.
-    MAX_RETRIES = 24
+    # A long queue makes retries compete with fresh calls for the same
+    # rate-limit budget, so an unlucky call can exhaust its attempts while the
+    # run is otherwise healthy. Pace well under the provider's ceiling and give
+    # each call a budget that survives a crowded window.
+    MAX_RETRIES = 48
     BASE_RETRY_DELAY = 2.0
     MAX_RETRY_DELAY = 90.0
 
@@ -249,14 +253,42 @@ class GeminiLLM(BaseLLM):
         text = str(exc).lower()
         return any(m in text for m in ("429", "resource_exhausted", "rate limit", "quota"))
 
-    @staticmethod
-    def _is_retryable(exc: Exception) -> bool:
-        """True for transient failures: rate limits, overload, 5xx, timeouts."""
+    #: Transient failures worth retrying. Three families, and the third was
+    #: learned the hard way: a dropped TCP connection is the most ordinary
+    #: transient error there is, and treating it as fatal aborted two otherwise
+    #: healthy multi-hour runs on four resets out of ~1800 calls.
+    RETRYABLE_MARKERS = (
+        # throttling
+        "429", "resource_exhausted", "rate limit", "quota",
+        # server-side
+        "500", "502", "503", "504", "unavailable", "overloaded", "internal error",
+        # transport and timeouts
+        "deadline", "timeout", "timed out",
+        "connection reset", "errno 54", "connection aborted", "broken pipe",
+        "connection refused", "errno 61", "server disconnected",
+        "remote end closed", "connection error", "ssl", "eof occurred",
+        "temporarily unavailable", "try again",
+    )
+
+    #: Permanent failures, checked first. Without this a 404 "model is no longer
+    #: available to new users" matches the "unavailable" marker above and spins
+    #: through the whole retry budget instead of failing immediately with a
+    #: message that names the real problem.
+    FATAL_MARKERS = ("not_found", "404", "invalid_argument", "400",
+                     "permission_denied", "403", "unauthenticated", "401",
+                     "api key not valid")
+
+    @classmethod
+    def _is_retryable(cls, exc: Exception) -> bool:
+        """True for transient failures: throttling, server errors, dropped connections.
+
+        Permanent failures are rejected first, so a bad model id or a bad key
+        surfaces at once rather than after the full retry budget.
+        """
         text = str(exc).lower()
-        markers = ("429", "resource_exhausted", "rate limit", "quota",
-                   "500", "502", "503", "504", "unavailable", "overloaded",
-                   "deadline", "timeout", "internal error")
-        return any(marker in text for marker in markers)
+        if any(marker in text for marker in cls.FATAL_MARKERS):
+            return False
+        return any(marker in text for marker in cls.RETRYABLE_MARKERS)
 
     def generate(self, prompt: str, **kwargs) -> str:
         """Generate text for one prompt, retrying transient failures.

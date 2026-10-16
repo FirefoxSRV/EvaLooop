@@ -55,11 +55,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", default="../assignment2-data")
     parser.add_argument("--n", type=int, default=150, help="Subset size (must divide by 5)")
+    parser.add_argument("--all", action="store_true",
+                        help="Use every eligible task instead of sampling. Removes the "
+                             "subset threat to validity entirely; the only exclusion left "
+                             "is the tasks whose assert cannot be masked.")
     parser.add_argument("--seed", type=int, default=20251013)
     parser.add_argument("--out", default="configs/task_ids.json")
     args = parser.parse_args()
 
-    if args.n % NUM_STRATA:
+    if not args.all and args.n % NUM_STRATA:
         print(f"--n must be divisible by {NUM_STRATA}", file=sys.stderr)
         return 2
 
@@ -91,22 +95,42 @@ def main() -> int:
     ordered = sorted(eligible, key=lambda tid: (difficulty[tid], tid))
 
     rng = random.Random(args.seed)
+    if args.all:
+        # No sampling: the universe is the run. Strata are still reported so the
+        # difficulty coverage is visible.
+        chosen = list(eligible)
+        strata_report = []
+        for s_idx in range(NUM_STRATA):
+            lo = s_idx * len(ordered) // NUM_STRATA
+            hi = (s_idx + 1) * len(ordered) // NUM_STRATA
+            stratum = ordered[lo:hi]
+            strata_report.append({
+                "stratum": s_idx + 1,
+                "difficulty_range": [round(difficulty[stratum[0]], 3),
+                                     round(difficulty[stratum[-1]], 3)],
+                "stratum_size": len(stratum), "sampled": len(stratum),
+            })
+        chosen.sort(key=lambda tid: int(tid.split("/")[-1]))
+        payload_n = len(chosen)
+    else:
+        payload_n = args.n
     per_stratum = args.n // NUM_STRATA
-    chosen, strata_report = [], []
-    for s in range(NUM_STRATA):
-        lo = s * len(ordered) // NUM_STRATA
-        hi = (s + 1) * len(ordered) // NUM_STRATA
-        stratum = ordered[lo:hi]
-        picked = rng.sample(stratum, per_stratum)
-        chosen.extend(picked)
-        strata_report.append({
-            "stratum": s + 1,
-            "difficulty_range": [round(difficulty[stratum[0]], 3), round(difficulty[stratum[-1]], 3)],
-            "stratum_size": len(stratum),
-            "sampled": per_stratum,
-        })
-
-    chosen.sort(key=lambda tid: int(tid.split("/")[-1]))
+    if not args.all:
+        chosen, strata_report = [], []
+        for s_i in range(NUM_STRATA):
+            lo = s_i * len(ordered) // NUM_STRATA
+            hi = (s_i + 1) * len(ordered) // NUM_STRATA
+            stratum = ordered[lo:hi]
+            picked = rng.sample(stratum, per_stratum)
+            chosen.extend(picked)
+            strata_report.append({
+                "stratum": s_i + 1,
+                "difficulty_range": [round(difficulty[stratum[0]], 3),
+                                     round(difficulty[stratum[-1]], 3)],
+                "stratum_size": len(stratum),
+                "sampled": per_stratum,
+            })
+        chosen.sort(key=lambda tid: int(tid.split("/")[-1]))
 
     # Ranking fidelity: subset ASL vs full-benchmark ASL across the 60 models.
     models = sorted(per_model)
@@ -117,7 +141,8 @@ def main() -> int:
     payload = {
         "task_ids": chosen,
         "provenance": {
-            "n": args.n,
+            "n": payload_n,
+            "sampling": "none (every eligible task)" if args.all else "stratified",
             "seed": args.seed,
             "num_strata": NUM_STRATA,
             "universe": "MBPP+ tasks whose assert line states a comparison (oracle is maskable)",

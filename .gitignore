@@ -107,3 +107,7 @@ report.html
 
 # Superseded 150-task run, kept for comparison
 results_150task_backup/
+
+# Superseded 150-task subset, kept for comparison
+results_150task_subset/
+results_full/

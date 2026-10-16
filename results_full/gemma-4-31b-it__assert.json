@@ -25675,23 +25675,22 @@
     ],
     "sandbox_launches": 10,
     "anchor_fallbacks": {},
+    "dropped_tasks": [],
     "usage": {
-      "calls": 253,
-      "prompt_tokens": 20849,
-      "output_tokens": 13879,
+      "calls": 0,
+      "prompt_tokens": 0,
+      "output_tokens": 0,
       "thoughts_tokens": 0,
-      "retries": 86,
-      "rate_limited": 3,
-      "backoff_seconds": 267.3200638055023,
+      "retries": 0,
+      "rate_limited": 0,
+      "backoff_seconds": 0.0,
       "failed_calls": 0,
       "daily_quota_exhausted": false,
       "model_id": "gemma-4-31b-it",
-      "model_versions": [
-        "gemma-4-31b-it"
-      ],
+      "model_versions": [],
       "pacing": {
-        "requests_per_minute": 18,
-        "seconds_waited_for_pacing": 635.1
+        "requests_per_minute": 20,
+        "seconds_waited_for_pacing": 0.0
       },
       "settings": {
         "temperature": 0.0,
@@ -25703,19 +25702,19 @@
       },
       "cache": {
         "path": "cache/gemma-4-31b-it.jsonl",
-        "hits": 5255,
-        "misses": 253,
-        "hit_rate": 0.9541,
-        "entries": 1662
+        "hits": 5508,
+        "misses": 0,
+        "hit_rate": 1.0,
+        "entries": 1879
       }
     },
-    "wall_seconds": 2653.6,
+    "wall_seconds": 317.7,
     "cache": {
       "path": "cache/gemma-4-31b-it.jsonl",
-      "hits": 5255,
-      "misses": 253,
-      "hit_rate": 0.9541,
-      "entries": 1662
+      "hits": 5508,
+      "misses": 0,
+      "hit_rate": 1.0,
+      "entries": 1879
     }
   }
 }

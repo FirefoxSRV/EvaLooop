@@ -229,5 +229,54 @@ class TestGenerationFailureGuard:
 
         with pytest.raises(GenerationFailure) as excinfo:
             build("assert", model=ThrottledModel(), tmp_path=tmp_path).run("scripted")
-        assert "cache will resume" in str(excinfo.value)
+        assert "cache resumes" in str(excinfo.value)
         assert "NOT written" in str(excinfo.value)
+
+
+class TestBrokenGenerationTolerance:
+    """A few unrecoverable calls should cost those tasks, not the whole run."""
+
+    def _model_failing(self, failing_ids):
+        from evaloop.models.gemini import ERROR_PREFIX
+
+        class PartialModel(ScriptedModel):
+            def generate(self, prompt, **kwargs):
+                # Overridden rather than only batch_generate, because a
+                # single-task cycle takes the sequential path.
+                self.prompts.append(prompt)
+                if not prompt.startswith("Generate Python code"):
+                    return self.summary
+                if any(t in prompt for t in failing_ids):
+                    return f"{ERROR_PREFIX}: 429 exhausted"
+                return f"```python\n{self.code}\n```"
+
+            def batch_generate(self, prompts, **kwargs):
+                return [self.generate(p, **kwargs) for p in prompts]
+        return PartialModel()
+
+    def test_a_small_share_is_dropped_and_the_run_continues(self, tmp_path):
+        # 100 tasks, one of which never generates: 1% is under the 2% tolerance.
+        meta = {f"Mbpp/{i}": {"prompt": PROMPT.replace("remove_Occ", f"remove_Occ"),
+                              "entry_point": "remove_Occ"} for i in range(1, 101)}
+        evaluator = build("assert", model=self._model_failing(["Mbpp/7\n"]),
+                          tester=ScriptedTester(pass_cycles=2), meta=meta,
+                          task_ids=list(meta), tmp_path=tmp_path)
+        payload = evaluator.run("scripted")
+        # The run completed rather than raising.
+        assert payload["n_tasks"] == 100
+
+    def test_dropped_tasks_are_recorded_for_the_analysis(self, tmp_path):
+        meta = {f"Mbpp/{i}": {"prompt": PROMPT, "entry_point": "remove_Occ"}
+                for i in range(1, 101)}
+        evaluator = build("assert", model=self._model_failing([]),
+                          tester=ScriptedTester(pass_cycles=2), meta=meta,
+                          task_ids=list(meta), tmp_path=tmp_path)
+        payload = evaluator.run("scripted")
+        assert "dropped_tasks" in payload["run_meta"]
+
+    def test_above_the_tolerance_the_run_still_aborts(self, tmp_path):
+        from evaloop.evaluation.anchored_evaluator import GenerationFailure
+        # One task, one failure: 100% is far above tolerance.
+        with pytest.raises(GenerationFailure, match="tolerance"):
+            build("assert", model=self._model_failing(["assert"]),
+                  tester=ScriptedTester(pass_cycles=5), tmp_path=tmp_path).run("scripted")

@@ -376,6 +376,12 @@ class GeminiLLM(BaseLLM):
                     self.usage["failed_calls"] += 1
                 return f"{ERROR_PREFIX}: {exc}"
 
+        # Logged, because an exhausted budget was previously silent: the run
+        # aborted with nothing in the log explaining which call gave up or why.
+        logger.error("Exhausted %d retries for %s; last error: %s",
+                     self.MAX_RETRIES, self.model_id, last_error)
+        with self._usage_lock:
+            self.usage["failed_calls"] += 1
         return f"{ERROR_PREFIX} after {self.MAX_RETRIES} retries: {last_error}"
 
     @staticmethod

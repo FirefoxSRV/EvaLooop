@@ -53,7 +53,8 @@ class AnchoredEvaluator(EvaLoopEvaluator):
     """Runs one (model, anchor) configuration over a fixed task subset."""
 
     def __init__(self, config, model, tester, dataset_meta: Dict[str, Any],
-                 task_ids: List[str], anchor: str):
+                 task_ids: List[str], anchor: str,
+                 max_broken_share: float = 0.02):
         """
         Args:
             config: An EvaluationConfig (supplies max_cycles, output_dir, name).
@@ -61,6 +62,9 @@ class AnchoredEvaluator(EvaLoopEvaluator):
             tester: Anything with ``test_batch([(task_id, code)])``.
             dataset_meta: ``{task_id: {"prompt": ..., "entry_point": ...}}``.
             task_ids: The sampled subset, in evaluation order.
+            max_broken_share: Share of a cycle's generations that may fail
+                before the run is abandoned. A handful of unrecoverable calls in
+                a long run should cost those tasks, not the run.
             anchor: Registered anchor name - ``assert``, ``masked_assert`` or
                 ``signature``.
         """
@@ -72,6 +76,12 @@ class AnchoredEvaluator(EvaLoopEvaluator):
         self.anchor = anchor
         #: Per-cycle sandbox batch sizes, for the run report.
         self.cycle_sizes: List[int] = []
+        #: Tasks dropped because a generation never completed. Recorded so the
+        #: analysis can exclude them from every arm rather than silently
+        #: comparing arms over different task sets.
+        self.dropped_tasks: set = set()
+        #: Share of a cycle's generations that may fail before the run aborts.
+        self.max_broken_share: float = max_broken_share
 
         missing = [t for t in self._task_ids if t not in self._meta]
         if missing:
@@ -134,24 +144,41 @@ class AnchoredEvaluator(EvaLoopEvaluator):
         code_key = self.TASK_OUTPUT_KEY_TEMPLATE.format(code_index + 1)
         summary_key = self.TASK_OUTPUT_KEY_TEMPLATE.format(len(tasks))
 
-        # Refuse to test an API error string as if it were a candidate solution.
+        # An API error string must never be tested as if it were a candidate
+        # solution: it would fail and be recorded as the model failing to sustain
+        # the loop. Below the tolerance those tasks are *dropped* from the run
+        # rather than scored, and recorded so the analysis can exclude them from
+        # every arm; above it the run aborts, because at that point the result
+        # would be shaped more by the provider than by the model.
         broken = [r["task_id"] for r in results
                   if code_key in r and r[code_key].startswith(ERROR_PREFIX)]
         if broken:
-            raise GenerationFailure(
-                f"Cycle {current_cycle}: {len(broken)} generation(s) failed after "
-                f"exhausting retries (first: {broken[0]}). Results were NOT written. "
-                "This is normally sustained quota throttling; re-run the same command "
-                "and the call cache will resume from here."
+            share = len(broken) / max(len(results), 1)
+            if share > self.max_broken_share:
+                raise GenerationFailure(
+                    f"Cycle {current_cycle}: {len(broken)} of {len(results)} generations "
+                    f"({share:.1%}) failed after exhausting retries (first: {broken[0]}), "
+                    f"above the {self.max_broken_share:.0%} tolerance. Results were NOT "
+                    "written. Re-run the same command; the call cache resumes from here."
+                )
+            logger.warning(
+                "Cycle %d: dropping %d task(s) whose generation failed (%.1f%%, within "
+                "tolerance): %s", current_cycle, len(broken), 100 * share,
+                ", ".join(broken[:5]) + ("…" if len(broken) > 5 else ""),
             )
+            self.dropped_tasks.update(broken)
 
-        candidates = [(r["task_id"], r[code_key]) for r in results if code_key in r]
+        dropped = set(broken)
+        candidates = [(r["task_id"], r[code_key]) for r in results
+                      if code_key in r and r["task_id"] not in dropped]
         self.cycle_sizes.append(len(candidates))
         outcomes = {o["task_id"]: o for o in tester.test_batch(candidates)}
 
         next_prompts = []
         for result in results:
             task_id = result["task_id"]
+            if task_id in dropped:
+                continue  # no verdict: the model was never asked successfully
             outcome = outcomes.get(task_id)
 
             if outcome is None:
@@ -234,6 +261,7 @@ class AnchoredEvaluator(EvaLoopEvaluator):
             "cycle_batch_sizes": self.cycle_sizes,
             "sandbox_launches": getattr(tester, "launches", None),
             "anchor_fallbacks": getattr(tasks[-1].anchor, "fallbacks", {}),
+            "dropped_tasks": sorted(self.dropped_tasks),
             "usage": model.usage_report() if hasattr(model, "usage_report") else {},
         }
         return payload

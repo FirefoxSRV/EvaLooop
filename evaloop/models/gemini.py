@@ -128,6 +128,11 @@ class GeminiLLM(BaseLLM):
         # repeat runs as reproducible as the API allows.
         self.seed = model_config.get("seed")
         self.concurrency = max(1, int(model_config.get("concurrency", 16)))
+        # A request with no deadline can wedge forever. One run sat for five
+        # hours on a connection that never returned and never errored, which no
+        # amount of retry logic can rescue because the retry never fires. The
+        # timeout converts that into an ordinary retryable failure.
+        self.request_timeout = float(model_config.get("request_timeout", 180.0))
         # Pace requests under the provider's per-minute quota instead of
         # discovering it through 429s. Leave headroom: the window the provider
         # measures and the one measured here never line up exactly.
@@ -146,7 +151,7 @@ class GeminiLLM(BaseLLM):
         #: Resolved model version strings seen in responses.
         self.model_versions = set()
 
-        self._client = self._build_client(model_config)
+        self._client = self._build_client(model_config)  # uses request_timeout
         self._config_cls, self._thinking_cls = self._load_types()
 
     def _build_client(self, model_config: Dict[str, Any]):
@@ -169,7 +174,8 @@ class GeminiLLM(BaseLLM):
                     "or the GOOGLE_CLOUD_PROJECT environment variable"
                 )
             logger.info("Using Vertex AI (project=%s, location=%s)", project, location)
-            return genai.Client(vertexai=True, project=project, location=location)
+            return genai.Client(vertexai=True, project=project, location=location,
+                                http_options=self._http_options())
 
         api_key = model_config.get("api_key") or os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -177,7 +183,13 @@ class GeminiLLM(BaseLLM):
                 "No Gemini credentials: set 'api_key' in the model config, or the "
                 "GEMINI_API_KEY environment variable, or use_vertex: true with ADC"
             )
-        return genai.Client(api_key=api_key)
+        return genai.Client(api_key=api_key, http_options=self._http_options())
+
+    def _http_options(self):
+        """Per-request HTTP options, carrying the deadline."""
+        from google.genai import types
+        # The SDK takes milliseconds.
+        return types.HttpOptions(timeout=int(self.request_timeout * 1000))
 
     @staticmethod
     def _load_types():

@@ -86,3 +86,22 @@ class TestDailyQuota:
     ])
     def test_server_retry_hint_is_parsed(self, message, expected):
         assert GeminiLLM._server_retry_delay(Boom(message)) == expected
+
+
+class TestRequestTimeout:
+    """A request with no deadline can wedge; one run sat five hours on one."""
+
+    def test_a_default_timeout_is_set(self):
+        llm = GeminiLLM.__new__(GeminiLLM)
+        llm.request_timeout = 180.0
+        assert llm._http_options().timeout == 180_000  # the SDK takes milliseconds
+
+    def test_the_timeout_is_configurable(self):
+        llm = GeminiLLM.__new__(GeminiLLM)
+        llm.request_timeout = 45.0
+        assert llm._http_options().timeout == 45_000
+
+    def test_a_timeout_is_retryable_rather_than_fatal(self):
+        # The whole point: a wedged connection must become an ordinary retry.
+        for message in ("Request timed out", "ReadTimeout", "deadline exceeded"):
+            assert GeminiLLM._is_retryable(Boom(message)) is True

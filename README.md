@@ -95,14 +95,14 @@ verdicts directly.
 ## 3. What was modified upstream, and why
 
 The extension is almost entirely new files. **Five existing source files were
-touched, adding 43 lines and removing 7** - every change additive or a
+touched, adding 47 lines and removing 8** - every change additive or a
 lazy-import move, none altering existing behaviour:
 
 | File | Change | +/− | Why |
 |---|---|---|---|
 | `evaloop/evaluation/cycle.py` | expose `task_input` in the `postprocess` context, in both the batch and sequential paths | +12 −1 | The signature anchor must derive from the code the model just produced; upstream's context carried only the cycle-start input. Existing tasks ignore the new key. |
 | `evaloop/models/factory.py` | import backends on use; register `gemini`/`google` | +13 −4 | An API-only run should not need torch installed, and a local run should not need the Gemini SDK. Extends the lazy-import convention the repo already asserts for its CLI. |
-| `evaloop/core/evaluator.py` | import `py_testing` (and so evalplus) inside the two methods that use it | +11 −2 | The generation stage talks to an API and never executes model output; it should not need the execution machinery at all. Same convention. |
+| `evaloop/core/evaluator.py` | import `py_testing` (and so evalplus) inside the two methods that use it, with a type-checking-only import for the annotation | +15 −3 | The generation stage talks to an API and never executes model output; it should not need the execution machinery at all. Same convention. |
 | `evaloop/tasks/__init__.py` | register the two new task types | +4 −0 | Follows the existing registry convention. |
 | `evaloop/tasks/base.py` | document the new context key | +3 −0 | It is part of the hook contract. |
 
@@ -178,7 +178,22 @@ export GEMINI_API_KEY="..."  # or pass --use-vertex for Vertex AI
 
 # All models, all three arms. Models run in parallel, anchors in sequence.
 ./scripts/run_overnight.sh
+
+# Main experiment: every eligible task (362), both Gemma models, all three arms.
+for m in gemma-4-26b-a4b-it gemma-4-31b-it; do
+  .venv-gen/bin/python scripts/run_anchored_experiment.py --model $m \
+      --anchor assert,masked_assert,signature --task-ids configs/task_ids_full.json \
+      --max-cycles 10 --thinking-level minimal --concurrency 8 \
+      --requests-per-minute 20 --tester docker --output-dir results &
+done; wait
 ```
+
+The submitted full-scale results come from a rerun of this command on Nov 1,
+2026, from an empty cache. `gemma-4-26b-a4b-it` reproduced the original run
+byte-for-byte on all 2,799 cycles. `gemma-4-31b-it` did not: the API returned
+different cycle-1 code for 41 of 362 tasks, so the served model had changed. Its
+three arms are all from the rerun; the original A0 file is kept in
+`results_full/` for comparison.
 
 ### Analysis
 
@@ -215,7 +230,7 @@ $P scripts/build_report.py                                  # report.md -> repor
 | Entry points 367/378 confirmed | `export_dataset_meta.py --source package` |
 | ASL / pass@1 / mid-failure table | `summarize_runs.py --full` |
 | ΔASL, CIs, Wilcoxon | `stats.py` |
-| 88.4% cache hits, 760 calls, token counts | `cost_report.py` |
+| 85.6% cache hits, 4,659 full-scale calls, token counts | `cost_report.py` |
 | Failure coding, 11/20 oracle-dependent | `failure_sampler.py` then `analysis/coding_summary.json` |
 
 ## 5. Models and settings

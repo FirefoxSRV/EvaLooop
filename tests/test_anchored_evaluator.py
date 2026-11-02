@@ -256,7 +256,7 @@ class TestBrokenGenerationTolerance:
 
     def test_a_small_share_is_dropped_and_the_run_continues(self, tmp_path):
         # 100 tasks, one of which never generates: 1% is under the 2% tolerance.
-        meta = {f"Mbpp/{i}": {"prompt": PROMPT.replace("remove_Occ", f"remove_Occ"),
+        meta = {f"Mbpp/{i}": {"prompt": PROMPT.replace("remove_Occ", "remove_Occ"),
                               "entry_point": "remove_Occ"} for i in range(1, 101)}
         evaluator = build("assert", model=self._model_failing(["Mbpp/7\n"]),
                           tester=ScriptedTester(pass_cycles=2), meta=meta,

@@ -2,13 +2,16 @@
 
 import json
 import logging
-from typing import Dict, Any, List
+from typing import TYPE_CHECKING, Dict, Any, List
 from pathlib import Path
 
 from .config import EvaluationConfig
 from ..models.factory import ModelFactory
 from ..tasks.factory import TaskFactory
 from ..evaluation.cycle import BatchEvaluationCycle
+
+if TYPE_CHECKING:
+    from ..evaluation.py_testing import EvalPlusCodeTester
 
 # evaloop.evaluation.py_testing imports evalplus, which pulls in the execution
 # machinery for untrusted code. It is imported inside the methods that need it so

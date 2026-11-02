@@ -6,7 +6,7 @@ non-zero if anything required is missing, so this can gate the ZIP build.
 
 Usage:
     python scripts/verify_submission.py
-    python scripts/verify_submission.py --zip ../sviswes_A3.zip
+    python scripts/verify_submission.py --zip ../sviswes_A4.zip
 """
 
 import argparse

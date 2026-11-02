@@ -111,3 +111,6 @@ results_150task_backup/
 # Superseded 150-task subset, kept for comparison
 results_150task_subset/
 results_full/
+
+# Built by scripts/package_submission.sh; not tracked
+submission.zip

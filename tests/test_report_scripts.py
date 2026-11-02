@@ -1,6 +1,5 @@
 """Tests for the reporting scripts: native re-serialisation and cost accounting."""
 
-import json
 import sys
 from pathlib import Path
 

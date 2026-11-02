@@ -15,9 +15,7 @@ Results are written in the assignment data package's schema, so the same
 analysis code reads both the published records and ours.
 """
 
-import json
 import logging
-from pathlib import Path
 from typing import Any, Dict, List
 
 from ..core.evaluator import EvaLoopEvaluator
